@@ -1,0 +1,9 @@
++role(white)
++role(black)
+
+base(cell(M, N, x)) <= index(M) & index(N)
+base(cell(M, N, o)) <= index(M) & index(N)
+base(cell(M, N, b)) <= index(M) & index(N)
+
++ base(control(white))
++ base(control(black))

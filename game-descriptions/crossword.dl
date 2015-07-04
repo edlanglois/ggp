@@ -1,0 +1,28 @@
+word(astante, a, s, t, a, n, t, e)
+word(astoria, a, s, t, o, r, i, a)
+word(baratoo, b, a, r, a, t, t, o)
+word(cobalto, c, o, b, a, l, t, l)
+word(pistola, p, i, s, t, o, l, a)
+word(statale, s, t, a, t, a, l, e)
+
+indexw(Word, 1, Character) <= word(Word, Character, _, _, _, _, _, _)
+indexw(Word, 2, Character) <= word(Word, _, Character, _, _, _, _, _)
+indexw(Word, 3, Character) <= word(Word, _, _, Character, _, _, _, _)
+indexw(Word, 4, Character) <= word(Word, _, _, _, Character, _, _, _)
+indexw(Word, 5, Character) <= word(Word, _, _, _, _, Character, _, _)
+indexw(Word, 6, Character) <= word(Word, _, _, _, _, _, Character, _)
+indexw(Word, 7, Character) <= word(Word, _, _, _, _, _, _, Character)
+
+intersect(HIndex, VIndex, HWord, VWord) <= indexw(HWord, VIndex, Char) & \
+                                           indexw(VWord, HIndex, Char)
+
+row_intersect(HIndex, VIndex1, VIndex2, VIndex3, HWord, VWord1, VWord2, VWord3) <= \
+	intersect(HIndex, VIndex1, HWord, VWord1) & \
+	intersect(HIndex, VIndex2, HWord, VWord2) & \
+	intersect(HIndex, VIndex3, HWord, VWord3)
+
+crossword(H1, H2, H3, V1, V2, V3) <= \
+	row_intersect(2, 2, 4, 6, H1, V1, V2, V3) & \
+	row_intersect(4, 2, 4, 6, H2, V1, V2, V3) & \
+	row_intersect(6, 2, 4, 6, H3, V1, V2, V3)
+
