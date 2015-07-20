@@ -8,5 +8,8 @@ setup(name="pygdl",
       author_email="eric@langlois.xyz",
       license="MIT",
       packages=["pygdl"],
-      install_requires=["pyswip"],
+      install_requires=[
+        "greenlet",
+        "pyswip"
+      ],
 )
