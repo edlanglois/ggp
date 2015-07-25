@@ -2,13 +2,6 @@ from pyswip import Prolog, Functor, Atom
 
 from pygdl.kif import kif_to_prolog
 
-def _consume_all(iterator):
-    try:
-        while True:
-            next(iterator)
-    except StopIteration:
-        pass
-
 class GameObject(object):
     def __init__(self, obj):
         self.obj = obj
@@ -26,6 +19,15 @@ class GameObject(object):
                           for arg in self.obj.args))
         else:
             return str(self.obj)
+
+
+class QueryEvaluatesFalseError(Exception):
+    def __init__(self, query):
+        self.query = query
+
+    def __str__(self):
+        return "Query: " + query
+
 
 class GameState(object):
     def __init__(self):
@@ -67,7 +69,6 @@ class GameState(object):
         """Load the game description from a KIF file."""
         with open(kif_file, 'r') as f:
             for fact in kif_to_prolog(f):
-                print(fact)
                 self.prolog.assertz(fact)
 
         self.start_game()
@@ -77,7 +78,7 @@ class GameState(object):
         self.prolog.retractall('turn(_)')
         self.prolog.assertz('turn(1)')
         self.prolog.retractall('true(_)')
-        _consume_all(self.prolog.query('forall(init(Fact), assert(true(Fact)))'))
+        self.require_query('forall(init(Fact), assert(true(Fact)))')
 
     def get_roles(self):
         return (assignment['Role']
@@ -97,13 +98,21 @@ class GameState(object):
     def set_move(self, role, move):
         assert(role == role.lower())
         assert(move == move.lower())
-        return self.boolean_query('setmove({!s}, {!s})'.format(role, move))
+        return self.require_query('setmove({!s}, {!s})'.format(role, move))
 
     def next_turn(self):
-        return self.boolean_query('update')
+        return self.requery_query('update')
 
     def is_terminal(self):
         return self.boolean_query('terminal')
+
+    def require_query(self, query_string):
+        """Execute query_string and raise exception if it evaluates false.
+
+        Raises QueryEvaluatesFalseError
+        """
+        if not self.boolean_query(query_string):
+            raise QueryEvaluatesFalseError(query_string)
 
     def boolean_query(self, query_string):
         return any(True for _ in self.query(query_string))
