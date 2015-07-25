@@ -1,3 +1,5 @@
+import random
+
 from pyswip import Prolog, Functor, Atom
 
 from pygdl.kif import kif_to_prolog
@@ -33,6 +35,14 @@ class GameState(object):
     def __init__(self):
         super().__init__()
         self.prolog = Prolog()
+        self.is_game_specified = False
+
+        # Prolog() is a singleton class so make sure that this is the only
+        # GameState using it.
+        id_ = random.randint(0, 10**10)
+        self.prolog.assertz('pygdl_game_state_id({!s})'.format(id_))
+        assert sum(1 for _ in self.query('pygdl_game_state_id(X)')) == 1, \
+               "Cannot create more than one instance of GameState"
 
         # Rules used for evaluating game states
         self.prolog.assertz('distinct(X, Y) :- dif(X, Y)')
@@ -67,14 +77,17 @@ class GameState(object):
 
     def load_game_from_file(self, kif_file):
         """Load the game description from a KIF file."""
+        assert(not self.is_game_specified)
         with open(kif_file, 'r') as f:
             for fact in kif_to_prolog(f):
                 self.prolog.assertz(fact)
 
+        self.is_game_specified = True
         self.start_game()
 
     def start_game(self):
         """(Re)start the game with no moves played."""
+        assert(self.is_game_specified)
         self.prolog.retractall('turn(_)')
         self.prolog.assertz('turn(1)')
         self.prolog.retractall('true(_)')
