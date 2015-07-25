@@ -73,11 +73,7 @@ distinct(X, Y) :- dif(X, Y).
 
 :- dynamic turn/1, does/2, true/1, nexttrue/1.
 
-turn(1).
-:- retractall(true(_)).
-:- forall(init(Fact), assert(true(Fact))).
-
-update :- 
+update :-
 	forall(role(Role), (
 		findall(Move, does(Role, Move), MoveList), length(MoveList, L), L == 1,
 		does(Role, Move), legal(Role, Move))),
@@ -97,6 +93,12 @@ setmove(Role, Move) :-
 	legal(Role, Move),
 	retractall(does(Role, _)),
 	assert(does(Role, Move)).
+
+% Initialize game
+:- retractall(turn(_)).
+turn(1).
+:- retractall(true(_)).
+:- forall(init(Fact), assert(true(Fact))).
 
 % Play game
 :- setmove(white, mark(2, 2)).
