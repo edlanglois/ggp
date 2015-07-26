@@ -4,6 +4,7 @@ from pyswip import Prolog, Functor, Atom
 
 from pygdl.kif import kif_to_prolog
 
+
 class GameObject(object):
     def __init__(self, obj):
         self.obj = obj
@@ -28,7 +29,7 @@ class QueryEvaluatesFalseError(Exception):
         self.query = query
 
     def __str__(self):
-        return "Query: " + query
+        return "Query: " + self.query
 
 
 class GameState(object):
@@ -42,7 +43,7 @@ class GameState(object):
         id_ = random.randint(0, 10**10)
         self.prolog.assertz('pygdl_game_state_id({!s})'.format(id_))
         assert sum(1 for _ in self.query('pygdl_game_state_id(X)')) == 1, \
-               "Cannot create more than one instance of GameState"
+            "Cannot create more than one instance of GameState"
 
         # Rules used for evaluating game states
         self.prolog.assertz('distinct(X, Y) :- dif(X, Y)')
@@ -79,8 +80,12 @@ class GameState(object):
         """Load the game description from a KIF file."""
         assert(not self.is_game_specified)
         with open(kif_file, 'r') as f:
-            for fact in kif_to_prolog(f):
-                self.prolog.assertz(fact)
+            self.load_game(f)
+
+    def load_game(self, lines):
+        """Load game from a KIF-formatted game description."""
+        for fact in kif_to_prolog(lines):
+            self.prolog.assertz(fact)
 
         self.is_game_specified = True
         self.start_game()
