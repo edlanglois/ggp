@@ -35,6 +35,8 @@ class QueryEvaluatesFalseError(Exception):
         return "Query: " + self.query
 
 
+# TODO: PrologGameState and a KIFGameState wrapper
+# Make set_move etc work with GameObject as arguments
 class GameState(object):
     def __init__(self):
         super().__init__()
@@ -130,7 +132,7 @@ class GameState(object):
         return self.require_query('setmove({!s}, {!s})'.format(role, move))
 
     def next_turn(self):
-        return self.requery_query('update')
+        return self.require_query('update')
 
     def is_terminal(self):
         return self.boolean_query('terminal')
@@ -144,7 +146,9 @@ class GameState(object):
             raise QueryEvaluatesFalseError(query_string)
 
     def boolean_query(self, query_string):
-        return any(True for _ in self.query(query_string))
+        # TODO: close query without using list
+        #return any(True for _ in self.query(query_string))
+        return bool(list(self.query(query_string)))
 
     def query(self, query_string):
         for assignment in self.prolog.query(query_string, normalize=False):
