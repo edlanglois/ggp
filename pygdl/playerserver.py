@@ -175,6 +175,9 @@ def make_general_game_playing_request_handler(message_handler):
         def __init__(self, request, client_address, server):
             super().__init__(request, client_address, server)
 
+        def log_message(self, format_, *args):
+            logger.debug("Sent: " + format_, *args)
+
         def do_POST(self):
             content_length = int(self.headers['content-length'])
             message_bytes = self.rfile.read(content_length)
