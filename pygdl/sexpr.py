@@ -62,3 +62,13 @@ def generate_s_expressions(tokens):
 
         else:
             s_expr_stack[-1].append(token)
+
+def to_s_expression_string(items):
+    """Convert a nested iterable of items into an S-expression string."""
+    if isinstance(items, str):
+        return items
+
+    return '{!s}{!s}{!s}'.format(
+        S_EXPR_SYMBOLS.BEGIN_TUPLE,
+        ' '.join(to_s_expression_string(item) for item in items),
+        S_EXPR_SYMBOLS.END_TUPLE)
