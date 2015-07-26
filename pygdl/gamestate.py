@@ -1,8 +1,11 @@
+import logging
 import random
 
 from pyswip import Prolog, Functor, Atom
 
-from pygdl.kif import kif_to_prolog
+from pygdl.kif import kif_to_prolog, kif_s_expr_to_prolog
+
+logger = logging.getLogger(__name__)
 
 
 class GameObject(object):
@@ -82,9 +85,17 @@ class GameState(object):
         with open(kif_file, 'r') as f:
             self.load_game(f)
 
-    def load_game(self, lines):
+    def load_game_from_lines(self, lines):
         """Load game from a KIF-formatted game description."""
-        for fact in kif_to_prolog(lines):
+        self.load_game_from_facts(kif_to_prolog(lines))
+
+    def load_game_from_s_expressions(self, s_expressions):
+        self.load_game_from_facts(
+            kif_s_expr_to_prolog(s_expr) for s_expr in s_expressions)
+
+    def load_game_from_facts(self, facts):
+        """Load game from a list of prolog fact strings."""
+        for fact in facts:
             self.prolog.assertz(fact)
 
         self.is_game_specified = True
