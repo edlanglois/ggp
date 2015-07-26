@@ -2,9 +2,12 @@
 
 KIF uses prolog (actually datalog) symantic with a lisp syntax.
 """
-from pygdl.parsing import ParseError
+import logging
+
 from pygdl.sexpr import parse_s_expressions
 from pygdl.utils.containers import Bunch
+
+logger = logging.getLogger(__name__)
 
 KIF_SYMBOLS = Bunch(
     VARIABLE_PREFIX='?',
@@ -14,11 +17,6 @@ KIF_SYMBOLS = Bunch(
 PROLOG_SYMBOLS = Bunch(
     RULE=':-',
 )
-
-
-class BadCapitilizationError(ParseError):
-    def __init__(self, atom):
-        super().__init__("Atom '" + atom + "' is not all in lowercase.")
 
 
 def kif_to_prolog(kif_lines):
@@ -37,8 +35,7 @@ def kif_to_prolog(kif_lines):
 def kif_s_expr_to_prolog(s_expr):
     """Convert a KIF S-expression to the equivalent prolog text"""
     if (isinstance(s_expr, str)):
-        if (s_expr != s_expr.lower()):
-            raise BadCapitilizationError(s_expr)
+        s_expr = s_expr.lower()
 
         if s_expr[0] == KIF_SYMBOLS.VARIABLE_PREFIX:
             return s_expr[1:].upper()
