@@ -70,7 +70,7 @@ class PrologGameState(object):
                         L == 1,
                         does(Role, Move),
                         legal(Role, Move))),
-                forall(next(Fact), assert(nexttrue(Fact))),
+                forall(base(Fact), (not(next(Fact)); assert(nexttrue(Fact)))),
                 retractall(true(_)),
                 forall(nexttrue(Fact), assert(true(Fact))),
                 retractall(nexttrue(_)),
@@ -121,8 +121,18 @@ class PrologGameState(object):
         assert(len(turns) == 1)
         return turns[0]
 
+    def get_base_terms(self):
+        """Return a list of terms which define the game state."""
+        return (assignment['X'] for assignment in self.query('base(X)'))
+
+    def get_state_terms(self):
+        """Return the base terms that are true for the current state."""
+        return (assignment['X']
+                for assignment in self.query('base(X), true(X)'))
+
     def set_move(self, role, move):
         """Set `role` to make `move` at the current turn."""
+        logger.debug("setmove(%s, %s)", str(role), str(move))
         assert(role == role.lower())
         assert(move == move.lower())
         return self.require_query('setmove({!s}, {!s})'.format(role, move))
@@ -228,8 +238,18 @@ class KIFGameState(object):
 
     def get_turn(self):
         """Return the current turn number as a KIFTerm."""
-        return self.prolog_assignments_to_kif(
+        return self.prolog_assignment_to_kif(
             self.prolog_game_state.get_turn())
+
+    def get_base_terms(self):
+        """Return a list of terms which define the game state."""
+        return self.prolog_assignments_to_kif(
+            self.prolog_game_state.get_base_terms())
+
+    def get_state_terms(self):
+        """Return the base terms that are true for the current state."""
+        return self.prolog_assignments_to_kif(
+            self.prolog_game_state.get_state_terms())
 
     def set_move(self, role, move):
         """Set `role` to make `move` at the current turn."""
@@ -250,8 +270,12 @@ class KIFGameState(object):
     @staticmethod
     def prolog_assignments_to_kif(assignments):
         for assignment in assignments:
-            if isinstance(assignment, PrologTerm):
-                yield KIFTerm.from_prolog(assignment)
-            else:
-                yield {variable: KIFTerm.from_prolog(equality)
-                       for variable, equality in assignment.iteritems()}
+            yield KIFGameState.prolog_assignment_to_kif(assignment)
+
+    @staticmethod
+    def prolog_assignment_to_kif(assignment):
+        if isinstance(assignment, PrologTerm):
+            return KIFTerm.from_prolog(assignment)
+        else:
+            return {variable: KIFTerm.from_prolog(equality)
+                    for variable, equality in assignment.iteritems()}

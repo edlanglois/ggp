@@ -77,7 +77,7 @@ update :-
 	forall(role(Role), (
 		findall(Move, does(Role, Move), MoveList), length(MoveList, L), L == 1,
 		does(Role, Move), legal(Role, Move))),
-	forall(next(Fact), assert(nexttrue(Fact))),
+	forall(base(Fact), (not(next(Fact)); assert(nexttrue(Fact)))),
 	format('1~n~n~n2', []),
 	retractall(true(_)),
 	format('3~n~n~n4', []),
