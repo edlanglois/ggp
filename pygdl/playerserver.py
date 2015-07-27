@@ -221,4 +221,8 @@ def run_player_server(player_factory, game_state_factory, port=9147):
                                                game_state_factory))
     server = http.server.HTTPServer(('', port), handler)
     logger.info('Server listening on port {!s}'.format(port))
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        logger.info('Interrupt received. Stopping server.')
+        pass
