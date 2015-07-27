@@ -38,30 +38,20 @@ def tokenize_s_expression_lines(lines):
 
 
 def generate_s_expressions(tokens):
-    """Generate S-expression from an iterator of tokens.
+    """Generate S-expressions from an iterator of tokens.
 
     For the purpose of this appliation, an S-expression is defined as
     either:
         * An atom
         * A tuple of S-expressions
     """
-    s_expr_stack = []
     for token in tokens:
         if token == S_EXPR_SYMBOLS.BEGIN_TUPLE:
-            new_s_expr = []
-            if s_expr_stack:
-                s_expr_stack[-1].append(new_s_expr)
-            s_expr_stack.append(new_s_expr)
-
+            yield list(generate_s_expressions(tokens))
         elif token == S_EXPR_SYMBOLS.END_TUPLE:
-            if not s_expr_stack:
-                raise MismatchedBracketError('extra')
-            if len(s_expr_stack) == 1:
-                yield s_expr_stack[0]
-            s_expr_stack.pop()
-
+            break
         else:
-            s_expr_stack[-1].append(token)
+            yield token
 
 def to_s_expression_string(items):
     """Convert a nested iterable of items into an S-expression string."""
@@ -72,3 +62,47 @@ def to_s_expression_string(items):
         S_EXPR_SYMBOLS.BEGIN_TUPLE,
         ' '.join(to_s_expression_string(item) for item in items),
         S_EXPR_SYMBOLS.END_TUPLE)
+
+
+# TODO: Use a real parser
+def prefix_functional_to_s_expressions(lines):
+    return \
+        prefix_functional_tokens_to_s_expressions(
+            tokenize_prefix_functional_notation(lines))
+
+
+def tokenize_prefix_functional_notation(lines):
+    """Tokenize a set of lines in prefix functional notation
+
+    In this notation, terms are either:
+        ATOM
+        ATOM(ARGS)
+    where ARGS is a comma-separated list of 0 or more terms.
+    """
+    for line in lines:
+        for token in re.split('([(),])', line):
+            stripped_token = token.strip()
+            if stripped_token not in (''):
+                yield stripped_token
+
+
+def prefix_functional_tokens_to_s_expressions(tokens):
+    """Generate S-expressions from prefix functional tokens."""
+    cur_term = None
+    for token in tokens:
+        if token == '(':
+            assert cur_term is not None
+            cur_term = ([cur_term] +
+                        list(prefix_functional_tokens_to_s_expressions(tokens)))
+        elif token == ')':
+            break
+        elif token == ',':
+            assert cur_term is not None
+            yield cur_term
+            cur_term = None
+        else:
+            assert cur_term is None
+            cur_term = token
+
+    if cur_term is not None:
+        yield cur_term
