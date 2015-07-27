@@ -32,6 +32,29 @@ def kif_to_prolog(kif_lines):
             parse_s_expressions(kif_remove_comments(kif_lines)))
 
 
+def single_kif_term_to_prolog(term_string):
+    """Convert a single kif term string to a single prolog term.
+
+    Raises ValueError if term_string doesn't represent exactly one term.
+    """
+    prolog_terms = kif_to_prolog([term_string])
+    try:
+        prolog_term = next(prolog_terms)
+    except StopIteration:
+        raise ValueError(
+            'KIF string "{}" does not represent exactly one term.'.format(
+                term_string))
+
+    try:
+        next(prolog_terms)
+        raise ValueError(
+            'KIF string "{}" does not represent exactly one term.'.format(
+                term_string))
+    except StopIteration:
+        pass
+
+    return prolog_term
+
 def kif_s_expr_to_prolog(s_expr):
     """Convert a KIF S-expression to the equivalent prolog text"""
     if (isinstance(s_expr, str)):

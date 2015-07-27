@@ -3,7 +3,7 @@
 import argparse
 import logging
 
-from pygdl.gamestate import GameState
+from pygdl.gamestate import KIFGameState
 from pygdl.players import LegalGamePlayer, RandomGamePlayer
 from pygdl.playerserver import run_player_server
 
@@ -33,4 +33,4 @@ parser.add_argument('--log-level', type=LogLevel, default='info',
 args = parser.parse_args()
 
 logging.basicConfig(level=args.log_level.level)
-run_player_server(player_class_dict[args.player], GameState)
+run_player_server(player_class_dict[args.player], KIFGameState)

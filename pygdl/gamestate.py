@@ -3,28 +3,14 @@ import random
 
 from pyswip import Prolog, Functor, Atom
 
-from pygdl.kif import kif_to_prolog, kif_s_expr_to_prolog
+from pygdl.kif import (kif_to_prolog,
+                       kif_s_expr_to_prolog,
+                       single_kif_term_to_prolog)
+from pygdl.sexpr import (parse_s_expressions,
+                         prefix_functional_to_s_expressions,
+                         to_s_expression_string)
 
 logger = logging.getLogger(__name__)
-
-
-class GameObject(object):
-    def __init__(self, obj):
-        self.obj = obj
-
-    def __repr__(self):
-        return "GameObject({!r})".format(self.obj)
-
-    def __str__(self):
-        if isinstance(self.obj, Atom):
-            return str(self.obj)
-        elif isinstance(self.obj, Functor):
-            return "{!s}({!s})".format(
-                self.obj.name,
-                ", ".join(str(GameObject(arg))
-                          for arg in self.obj.args))
-        else:
-            return str(self.obj)
 
 
 class QueryEvaluatesFalseError(Exception):
@@ -35,9 +21,29 @@ class QueryEvaluatesFalseError(Exception):
         return "Query: " + self.query
 
 
-# TODO: PrologGameState and a KIFGameState wrapper
-# Make set_move etc work with GameObject as arguments
-class GameState(object):
+class PrologTerm(object):
+    """Representation of a Prolog term."""
+    def __init__(self, obj):
+        super().__init__()
+        self.obj = obj
+
+    def __repr__(self):
+        return "{}({!r})".format(PrologTerm.__name__, self.obj)
+
+    def __str__(self):
+        """Return the term as a Prolog string."""
+        if isinstance(self.obj, Functor):
+            # Default str(Functor()) does not give a Prolog string
+            return "{!s}({!s})".format(
+                self.obj.name,
+                ", ".join(str(PrologTerm(arg))
+                          for arg in self.obj.args))
+        else:
+            return str(self.obj)
+
+
+class PrologGameState(object):
+    """Manage a game state with Prolog."""
     def __init__(self):
         super().__init__()
         self.prolog = Prolog()
@@ -81,20 +87,6 @@ class GameState(object):
                 assert(does(Role, Move))
             """)
 
-    def load_game_from_file(self, kif_file):
-        """Load the game description from a KIF file."""
-        assert(not self.is_game_specified)
-        with open(kif_file, 'r') as f:
-            self.load_game(f)
-
-    def load_game_from_lines(self, lines):
-        """Load game from a KIF-formatted game description."""
-        self.load_game_from_facts(kif_to_prolog(lines))
-
-    def load_game_from_s_expressions(self, s_expressions):
-        self.load_game_from_facts(
-            kif_s_expr_to_prolog(s_expr) for s_expr in s_expressions)
-
     def load_game_from_facts(self, facts):
         """Load game from a list of prolog fact strings."""
         for fact in facts:
@@ -112,29 +104,38 @@ class GameState(object):
         self.require_query('forall(init(Fact), assert(true(Fact)))')
 
     def get_roles(self):
+        """An iterable of PrologTerm, each containing a role."""
         return (assignment['Role']
                 for assignment in self.query('role(Role)'))
 
     def get_legal_moves(self, role):
+        """An iterable of PrologTerm, each containing a legal move for role."""
         assert(role == role.lower())
         return (assignment['Move']
                 for assignment in self.query('legal({!s}, Move)'.format(role)))
 
     def get_turn(self):
+        """Return the current turn number as a PrologTerm."""
         turns = list(assignment['Turn']
                      for assignment in self.query('turn(Turn)'))
         assert(len(turns) == 1)
         return turns[0]
 
     def set_move(self, role, move):
+        """Set `role` to make `move` at the current turn."""
         assert(role == role.lower())
         assert(move == move.lower())
         return self.require_query('setmove({!s}, {!s})'.format(role, move))
 
     def next_turn(self):
+        """Advance to the next turn.
+
+        All roles make the moves specified by `set_move`
+        """
         return self.require_query('update')
 
     def is_terminal(self):
+        """Return True if the current game state is terminal."""
         return self.boolean_query('terminal')
 
     def require_query(self, query_string):
@@ -146,15 +147,111 @@ class GameState(object):
             raise QueryEvaluatesFalseError(query_string)
 
     def boolean_query(self, query_string):
+        """Return True if query_string has at least 1 satisfying assignment."""
         # TODO: close query without using list
-        #return any(True for _ in self.query(query_string))
+        # return any(True for _ in self.query(query_string))
         return bool(list(self.query(query_string)))
 
     def query(self, query_string):
+        """Execute query_string and return results.
+
+        Returns an iterable of assignments, where each assignment is
+        a dictionary that maps Variable => PrologTerm.
+
+        If the query has no variables and is satisfied, a single '[]'
+        PrologTerm is yielded.
+
+        WARNING: The returned iterator must be consumed before executing the
+        next query.
+        """
         for assignment in self.prolog.query(query_string, normalize=False):
             if isinstance(assignment, Atom):
-                yield GameObject(assignment)
+                yield PrologTerm(assignment)
             else:
-                yield {str(GameObject(equality.args[0])):
-                       GameObject(equality.args[1])
+                yield {str(PrologTerm(equality.args[0])):
+                       PrologTerm(equality.args[1])
                        for equality in assignment}
+
+
+class KIFTerm(object):
+    """Representation of a KIF term."""
+
+    def __init__(self, kif_term, is_s_expression=False):
+        if is_s_expression:
+            self.s_expression = kif_term
+        else:
+            s_expressions = list(parse_s_expressions([str(kif_term)]))
+            assert len(s_expressions) == 1
+            self.s_expression = s_expressions[0]
+
+    @staticmethod
+    def from_prolog(prolog_term):
+        """Generate a KIF term from a prolog string."""
+        s_expressions = \
+            list(prefix_functional_to_s_expressions([str(prolog_term)]))
+        assert len(s_expressions) == 1
+        return KIFTerm(s_expressions[0], is_s_expression=True)
+
+    def __str__(self):
+        return to_s_expression_string(self.s_expression)
+
+
+class KIFGameState(object):
+    """Wrapper around PrologGameState providing a KIF interface."""
+    def __init__(self):
+        super().__init__()
+        self.prolog_game_state = PrologGameState()
+
+    def load_game_from_lines(self, lines):
+        """Load the game description from KIF lines."""
+        self.prolog_game_state.load_game_from_facts(kif_to_prolog(lines))
+
+    def load_game_from_s_expressions(self, s_expressions):
+        """Load the game description from KIF S-expressions"""
+        self.prolog_game_state.load_game_from_facts(
+            kif_s_expr_to_prolog(s_expr) for s_expr in s_expressions)
+
+    def start_game(self):
+        """(Re)start the game with no moves played."""
+        self.prolog_game_state.start_game()
+
+    def get_roles(self):
+        """An iterable of KIFTerm, each containing a role."""
+        return self.prolog_assignments_to_kif(
+            self.prolog_game_state.get_roles())
+
+    def get_legal_moves(self, role):
+        """An iterable of KIFTerm, each containing a legal move for role."""
+        return self.prolog_assignments_to_kif(
+            self.prolog_game_state.get_legal_moves(
+                single_kif_term_to_prolog(role)))
+
+    def get_turn(self):
+        """Return the current turn number as a KIFTerm."""
+        return self.prolog_assignments_to_kif(
+            self.prolog_game_state.get_turn())
+
+    def set_move(self, role, move):
+        """Set `role` to make `move` at the current turn."""
+        return self.prolog_game_state.set_move(single_kif_term_to_prolog(role),
+                                               single_kif_term_to_prolog(move))
+
+    def next_turn(self):
+        """Advance to the next turn.
+
+        All roles make the moves specified by `set_move`
+        """
+        return self.prolog_game_state.next_turn()
+
+    def is_terminal(self):
+        """Return True if the current game state is terminal."""
+        return self.prolog_game_state.is_terminal()
+
+    @staticmethod
+    def prolog_assignments_to_kif(assignments):
+        for assignment in assignments:
+            if isinstance(assignment, PrologTerm):
+                yield KIFTerm.from_prolog(assignment)
+            else:
+                yield {variable: KIFTerm.from_prolog(equality)
+                       for variable, equality in assignment.iteritems()}
