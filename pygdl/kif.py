@@ -54,9 +54,9 @@ def kif_s_expr_to_prolog_rule(head, body):
     Both head and body are KIF S-expressions.
     """
     return (
-        '(' + kif_s_expr_to_prolog(head) + ')' +
+        kif_s_expr_to_prolog(head) +
         ' ' + PROLOG_SYMBOLS.RULE + ' ' +
-        ', '.join('(' + kif_s_expr_to_prolog(predicate_s_expr) + ')'
+        ', '.join(kif_s_expr_to_prolog(predicate_s_expr)
                   for predicate_s_expr in body)
     )
 
@@ -69,7 +69,7 @@ def kif_s_expr_to_prolog_compound_term(functor, arguments):
     return (
         kif_s_expr_to_prolog(functor) +
         '(' +
-        ', '.join('(' + kif_s_expr_to_prolog(arg_s_expr) + ')'
+        ', '.join(kif_s_expr_to_prolog(arg_s_expr)
                   for arg_s_expr in arguments) +
         ')'
     )
