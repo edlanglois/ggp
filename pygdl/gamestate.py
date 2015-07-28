@@ -219,6 +219,11 @@ class KIFGameState(object):
         super().__init__()
         self.prolog_game_state = PrologGameState()
 
+    def load_game_from_file(self, filename):
+        """Load the game description from a KIF file"""
+        with open(filename, 'r') as f:
+            self.load_game_from_lines(f)
+
     def load_game_from_lines(self, lines):
         """Load the game description from KIF lines."""
         self.prolog_game_state.load_game_from_facts(kif_to_prolog(lines))
