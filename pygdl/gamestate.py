@@ -62,6 +62,7 @@ class PrologGameState(object):
         self.prolog.dynamic('does/2')
         self.prolog.dynamic('true/1')
         self.prolog.dynamic('nexttrue/1')
+        self.prolog.dynamic('wastrue/2')
         self.prolog.assertz(
             """update :-
                 forall(role(Role),
@@ -70,14 +71,23 @@ class PrologGameState(object):
                         L == 1,
                         does(Role, Move),
                         legal(Role, Move))),
+                turn(Turn),
+                forall(true(Fact), assert(wastrue(Fact, Turn))),
                 forall(base(Fact), (not(next(Fact)); assert(nexttrue(Fact)))),
                 retractall(true(_)),
                 forall(nexttrue(Fact), assert(true(Fact))),
                 retractall(nexttrue(_)),
-                turn(T),
-                succ(T, U),
-                assert(turn(U)),
-                retract(turn(T))
+                succ(Turn, NewTurn),
+                assert(turn(NewTurn)),
+                retract(turn(Turn))
+            """)
+        self.prolog.assertz(
+            """resetturn(Turn) :-
+                wastrue(_, Turn), !,
+                retractall(true(_)),
+                retractall(turn(_)),
+                forall(wastrue(Fact, Turn), assert(true(Fact))),
+                assert(turn(Turn))
             """)
         self.prolog.assertz(
             """setmove(Role, Move) :-
@@ -147,6 +157,15 @@ class PrologGameState(object):
         All roles make the moves specified by `set_move`
         """
         self.require_query('update')
+
+    def previous_turn(self):
+        """Rewind to the previous turn.
+
+        It is an error to call this from the first turn.
+        """
+        turn = self.get_turn()
+        assert(turn > 1)
+        self.require_query('resetturn({!s})'.format(turn - 1))
 
     def is_terminal(self):
         """Return True if the current game state is terminal."""
@@ -297,6 +316,13 @@ class KIFGameState(object):
         All roles make the moves specified by `set_move`
         """
         return self.prolog_game_state.next_turn()
+
+    def previous_turn(self):
+        """Rewind to the previous turn.
+
+        It is an error to call this from the first turn.
+        """
+        return self.prolog_game_state.previous_turn()
 
     def is_terminal(self):
         """Return True if the current game state is terminal."""
