@@ -48,6 +48,10 @@ class SerialGeneralGamePlayingMessageHandler(object):
             self.game_state = game_state
             self.player = player
 
+    class UnknownGameIDError(Exception):
+        def __init__(self, id):
+            self.id = id
+
     def __init__(self, player_factory, game_state_factory,
                  max_simultaneous_games=1):
         super().__init__()
@@ -73,7 +77,17 @@ class SerialGeneralGamePlayingMessageHandler(object):
             logger.error("No handler for messsage type: " + message_type)
             return
 
-        return handler(message_s_expression[1:])
+        try:
+            return handler(message_s_expression[1:])
+        except self.UnknownGameIDError as e:
+            logger.warning("Received message for unknown game id '%s'", e.id)
+
+    def get_game(self, game_id):
+        """Return the GameStuff associated with id"""
+        try:
+            return self.games[game_id]
+        except KeyError as e:
+            raise self.UnknownGameIDError(game_id) from e
 
     def make_info_response(self, is_available):
         return (('name', self.player_factory.player_name),
@@ -128,7 +142,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
         logger.debug("Game ID: " + game_id)
         logger.debug("New moves: " + str(new_moves))
 
-        player = self.games[game_id].player
+        player = self.get_game(game_id).player
 
         if new_moves != 'nil':
             player.update_moves(new_moves)
@@ -147,7 +161,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
         logger.debug("Game ID: " + game_id)
         logger.debug("New moves: " + str(new_moves))
 
-        player = self.games[game_id].player
+        player = self.get_game(game_id).player
 
         if new_moves != 'nil':
             player.update_moves(new_moves)
@@ -164,7 +178,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
         game_id = args[0]
         logger.debug("Game ID: " + game_id)
 
-        player = self.games[game_id].player
+        player = self.get_game(game_id).player
         player.abort()
 
         return 'done'
