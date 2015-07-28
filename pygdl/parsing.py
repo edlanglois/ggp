@@ -1,6 +1,6 @@
 class ParseError(Exception):
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, message):
+        self.message = message
 
     def __str__(self):
-        return str(self.value)
+        return str(self.message)

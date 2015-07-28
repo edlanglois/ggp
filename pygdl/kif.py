@@ -4,6 +4,7 @@ KIF uses prolog (actually datalog) symantic with a lisp syntax.
 """
 import logging
 
+from pygdl.parsing import ParseError
 from pygdl.sexpr import parse_s_expressions
 from pygdl.utils.containers import Bunch
 
@@ -18,6 +19,14 @@ PROLOG_SYMBOLS = Bunch(
     RULE=':-',
 )
 
+class ArityError(ParseError):
+    def __init__(self, func_name, expected_num_args, actual_num_args):
+        self.func_name = func_name
+        self.expected_num_args = expected_num_args
+        self.actual_num_args = actual_num_args
+        super().__init__(
+            "Function '{!s}' called with {!s} arg(s) but expected {!s}".format(
+                func_name, actual_num_args, expected_num_args))
 
 def kif_to_prolog(kif_lines):
     """Convert KIF format to prolog.
@@ -66,7 +75,15 @@ def kif_s_expr_to_prolog(s_expr):
             return s_expr
 
     elif s_expr[0] == KIF_SYMBOLS.RULE:
-        return kif_s_expr_to_prolog_rule(s_expr[1], s_expr[2:])
+        if len(s_expr) < 2:
+            raise ArityError(KIF_SYMBOLS.RULE, ">= 1", len(s_expr) - 1)
+
+        head = s_expr[1]
+        body = s_expr[2:]
+        # If the body of a rule is empty in KIF, the head is automatically true.
+        if not body:
+            body = ['true']
+        return kif_s_expr_to_prolog_rule(head, body)
     else:
         return kif_s_expr_to_prolog_compound_term(s_expr[0], s_expr[1:])
 

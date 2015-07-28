@@ -1,8 +1,11 @@
 """Functions for parsing S-Expressions"""
+import logging
 import re
 
 from pygdl.parsing import ParseError
 from pygdl.utils.containers import Bunch
+
+logger = logging.getLogger(__name__)
 
 S_EXPR_SYMBOLS = Bunch(
     BEGIN_TUPLE='(',
