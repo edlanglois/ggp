@@ -4,10 +4,10 @@ import argparse
 import logging
 
 from pygdl.gamestate import KIFGameState
-from pygdl.players import LegalGamePlayer, RandomGamePlayer
+from pygdl.players import Legal, Random
 from pygdl.playerserver import run_player_server
 
-player_classes = [LegalGamePlayer, RandomGamePlayer]
+player_classes = [Legal, Random]
 player_class_dict = {class_.__name__: class_
                      for class_ in player_classes}
 

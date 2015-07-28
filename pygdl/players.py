@@ -38,8 +38,8 @@ class PrologGamePlayer(object):
         self.logger.info('Aborting game.')
 
 
-class LegalGamePlayer(PrologGamePlayer):
-    player_name = 'LegalGamePlayer'
+class Legal(PrologGamePlayer):
+    player_name = 'Legal'
 
     def __init__(self, game_state, role, _, play_clock):
         super().__init__(game_state, role, play_clock)
@@ -51,8 +51,8 @@ class LegalGamePlayer(PrologGamePlayer):
         return str(first_move)
 
 
-class RandomGamePlayer(PrologGamePlayer):
-    player_name = 'RandomGamePlayer'
+class Random(PrologGamePlayer):
+    player_name = 'Random'
 
     def __init__(self, game_state, role, _, play_clock):
         super().__init__(game_state, role, play_clock)
