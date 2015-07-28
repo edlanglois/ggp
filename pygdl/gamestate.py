@@ -110,6 +110,7 @@ class PrologGameState(object):
 
     def get_legal_moves(self, role):
         """An iterable of PrologTerm, each containing a legal move for role."""
+        role = str(role)
         assert(role == role.lower())
         return (assignment['Move']
                 for assignment in self.query('legal({!s}, Move)'.format(role)))
@@ -132,7 +133,9 @@ class PrologGameState(object):
 
     def set_move(self, role, move):
         """Set `role` to make `move` at the current turn."""
-        logger.debug("setmove(%s, %s)", str(role), str(move))
+        role = str(role)
+        move = str(move)
+        logger.debug("setmove(%s, %s)", role, move)
         assert(role == role.lower())
         assert(move == move.lower())
         return self.require_query('setmove({!s}, {!s})'.format(role, move))
@@ -238,7 +241,7 @@ class KIFGameState(object):
         """An iterable of KIFTerm, each containing a legal move for role."""
         return self.prolog_assignments_to_kif(
             self.prolog_game_state.get_legal_moves(
-                single_kif_term_to_prolog(role)))
+                single_kif_term_to_prolog(str(role))))
 
     def get_turn(self):
         """Return the current turn number as a KIFTerm."""
@@ -257,8 +260,9 @@ class KIFGameState(object):
 
     def set_move(self, role, move):
         """Set `role` to make `move` at the current turn."""
-        return self.prolog_game_state.set_move(single_kif_term_to_prolog(role),
-                                               single_kif_term_to_prolog(move))
+        return self.prolog_game_state.set_move(
+            single_kif_term_to_prolog(str(role)),
+            single_kif_term_to_prolog(str(move)))
 
     def next_turn(self):
         """Advance to the next turn.

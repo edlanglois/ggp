@@ -27,8 +27,7 @@ class PrologGamePlayer(object):
             self.logger.debug("\t%s", str(base))
 
         for role, move in zip(roles, new_moves):
-            # TODO: Remove str(...)
-            self.game_state.set_move(str(role), to_s_expression_string(move))
+            self.game_state.set_move(role, to_s_expression_string(move))
         self.game_state.next_turn()
 
     def stop(self):
