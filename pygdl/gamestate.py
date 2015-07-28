@@ -158,9 +158,13 @@ class PrologGameState(object):
 
     def boolean_query(self, query_string):
         """Return True if query_string has at least 1 satisfying assignment."""
-        # TODO: close query without using list
-        # return any(True for _ in self.query(query_string))
-        return bool(list(self.query(query_string)))
+        query_results = self.query(query_string)
+        try:
+            next(query_results)
+            query_results.close()
+            return True
+        except StopIteration:
+            return False
 
     def query(self, query_string):
         """Execute query_string and return results.

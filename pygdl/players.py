@@ -46,11 +46,10 @@ class LegalGamePlayer(PrologGamePlayer):
         super().__init__(game_state, role, play_clock)
 
     def get_move(self):
-        # TODO: ability to close queryies
-        legal_moves = list(self.game_state.get_legal_moves(self.role))
-        first_legal_move = legal_moves[0]
-        self.logger.info("%s", "Move: {!s}".format(first_legal_move))
-        return str(first_legal_move)
+        moves = self.game_state.get_legal_moves(self.role)
+        first_move = next(moves)
+        moves.close()
+        return str(first_move)
 
 
 class RandomGamePlayer(PrologGamePlayer):
@@ -60,8 +59,9 @@ class RandomGamePlayer(PrologGamePlayer):
         super().__init__(game_state, role, play_clock)
 
     def get_move(self):
-        # TODO: ability to close queries
-        legal_moves = list(self.game_state.get_legal_moves(self.role))
-        random_legal_move = random.choice(legal_moves)
-        self.logger.info("%s", "Move: {!s}".format(random_legal_move))
-        return str(random_legal_move)
+        random_move = None
+        for i, move in enumerate(self.game_state.get_legal_moves(self.role)):
+            if random.randint(0, i) == 0:
+                random_move = move
+
+        return str(random_move)

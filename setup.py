@@ -9,7 +9,6 @@ setup(name="pygdl",
       license="MIT",
       packages=["pygdl"],
       install_requires=[
-        "greenlet",
         "pyswip"
       ],
 )
