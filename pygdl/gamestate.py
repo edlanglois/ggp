@@ -116,11 +116,12 @@ class PrologGameState(object):
                 for assignment in self.query('legal({!s}, Move)'.format(role)))
 
     def get_turn(self):
-        """Return the current turn number as a PrologTerm."""
-        turns = list(assignment['Turn']
-                     for assignment in self.query('turn(Turn)'))
-        assert(len(turns) == 1)
-        return turns[0]
+        """Return the current turn number."""
+        return self.query_single('turn(Turn)')['Turn'].obj
+
+    def get_utility(self, role):
+        """Return the utility of the current state for the given role."""
+        return self.query_single('goal({!s}, U)'.format(role))['U'].obj
 
     def get_base_terms(self):
         """Return a list of terms which define the game state."""
@@ -138,18 +139,36 @@ class PrologGameState(object):
         logger.debug("setmove(%s, %s)", role, move)
         assert(role == role.lower())
         assert(move == move.lower())
-        return self.require_query('setmove({!s}, {!s})'.format(role, move))
+        self.require_query('setmove({!s}, {!s})'.format(role, move))
 
     def next_turn(self):
         """Advance to the next turn.
 
         All roles make the moves specified by `set_move`
         """
-        return self.require_query('update')
+        self.require_query('update')
 
     def is_terminal(self):
         """Return True if the current game state is terminal."""
         return self.boolean_query('terminal')
+
+    def query_single(self, query_string):
+        """Evaluate query_string and return the single resulting assignment.
+
+        Raises an exception if the query results in anything other than one
+        term.
+        """
+        query_results = self.query(query_string)
+        try:
+            result = next(query_results)
+            try:
+                next(query_results)
+            except StopIteration:
+                return result
+
+            raise AssertionError("Query yielded > 1 assignment.")
+        except StopIteration:
+            raise AssertionError("Query yielded no assignments.")
 
     def require_query(self, query_string):
         """Execute query_string and raise exception if it evaluates false.
@@ -249,9 +268,12 @@ class KIFGameState(object):
                 single_kif_term_to_prolog(str(role))))
 
     def get_turn(self):
-        """Return the current turn number as a KIFTerm."""
-        return self.prolog_assignment_to_kif(
-            self.prolog_game_state.get_turn())
+        """Return the current turn number"""
+        return self.prolog_game_state.get_turn()
+
+    def get_utility(self, role):
+        """Return the utility of the current state for the given role."""
+        return self.prolog_game_state.get_utility(role)
 
     def get_base_terms(self):
         """Return a list of terms which define the game state."""
