@@ -72,6 +72,7 @@ class PrologGameState(object):
                         does(Role, Move),
                         legal(Role, Move))),
                 turn(Turn),
+                retractall(wastrue(_, Turn)),
                 forall(true(Fact), assert(wastrue(Fact, Turn))),
                 forall(base(Fact), (not(next(Fact)); assert(nexttrue(Fact)))),
                 retractall(true(_)),
@@ -118,6 +119,10 @@ class PrologGameState(object):
         return (assignment['Role']
                 for assignment in self.query('role(Role)'))
 
+    def get_num_roles(self):
+        """Return number of roles in the game."""
+        return len(set(self.get_roles()))
+
     def get_legal_moves(self, role):
         """An iterable of PrologTerm, each containing a legal move for role."""
         role = str(role)
@@ -127,11 +132,11 @@ class PrologGameState(object):
 
     def get_turn(self):
         """Return the current turn number."""
-        return self.query_single('turn(Turn)')['Turn'].obj
+        return self.query_first('turn(Turn)')['Turn'].obj
 
     def get_utility(self, role):
         """Return the utility of the current state for the given role."""
-        return self.query_single('goal({!s}, U)'.format(role))['U'].obj
+        return self.query_first('goal({!s}, U)'.format(role))['U'].obj
 
     def get_base_terms(self):
         """Return a list of terms which define the game state."""
@@ -146,7 +151,6 @@ class PrologGameState(object):
         """Set `role` to make `move` at the current turn."""
         role = str(role)
         move = str(move)
-        logger.debug("setmove(%s, %s)", role, move)
         assert(role == role.lower())
         assert(move == move.lower())
         self.require_query('setmove({!s}, {!s})'.format(role, move))
@@ -188,6 +192,20 @@ class PrologGameState(object):
             raise AssertionError("Query yielded > 1 assignment.")
         except StopIteration:
             raise AssertionError("Query yielded no assignments.")
+
+    def query_first(self, query_string):
+        """Evaluate query_string and return the first assignment.
+
+        Raises QueryEvaluatesFalseError if the query has no satisyfing
+        assignment.
+        """
+        query_results = self.query(query_string)
+        try:
+            result = next(query_results)
+            query_results.close()
+            return result
+        except StopIteration:
+            raise QueryEvaluatesFalseError(query_string)
 
     def require_query(self, query_string):
         """Execute query_string and raise exception if it evaluates false.
@@ -279,6 +297,10 @@ class KIFGameState(object):
         """An iterable of KIFTerm, each containing a role."""
         return self.prolog_assignments_to_kif(
             self.prolog_game_state.get_roles())
+
+    def get_num_roles(self):
+        """Return number of roles in the game."""
+        return self.prolog_game_state.get_num_roles()
 
     def get_legal_moves(self, role):
         """An iterable of KIFTerm, each containing a legal move for role."""

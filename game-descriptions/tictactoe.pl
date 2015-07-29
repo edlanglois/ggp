@@ -71,22 +71,29 @@ terminal :- not(open).
 % Game Manager
 distinct(X, Y) :- dif(X, Y).
 
-:- dynamic turn/1, does/2, true/1, nexttrue/1.
+:- dynamic turn/1, does/2, true/1, nexttrue/1, wastrue/2.
 
 update :-
 	forall(role(Role), (
 		findall(Move, does(Role, Move), MoveList), length(MoveList, L), L == 1,
 		does(Role, Move), legal(Role, Move))),
+	turn(Turn),
+	retractall(wastrue(_, Turn)),
+	forall(true(Fact), assert(wastrue(Fact, Turn))),
 	forall(base(Fact), (not(next(Fact)); assert(nexttrue(Fact)))),
-	format('1~n~n~n2', []),
 	retractall(true(_)),
-	format('3~n~n~n4', []),
 	forall(nexttrue(Fact), assert(true(Fact))),
 	retractall(nexttrue(_)),
-	turn(T),
-	succ(T, U),
-	assert(turn(U)),
-	retract(turn(T)).
+	succ(Turn, NewTurn),
+	assert(turn(NewTurn)),
+	retract(turn(Turn)).
+
+resetturn(Turn) :-
+	wastrue(_, Turn), !,
+	retractall(true(_)),
+	retractall(turn(_)),
+	forall(wastrue(Fact, Turn), assert(true(Fact))),
+	assert(turn(Turn)).
 
 setmove(Role, Move) :-
 	role(Role),
