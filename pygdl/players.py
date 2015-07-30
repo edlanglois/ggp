@@ -17,6 +17,9 @@ class PrologGamePlayer(object):
         self.role = role
         self.play_clock = play_clock
 
+    @classmethod
+    def player_name(cls):
+        return cls.__class__.__name__
 
     def update_moves(self, new_moves):
         roles = list(self.game_state.get_roles())
@@ -42,8 +45,6 @@ class PrologGamePlayer(object):
 
 
 class Legal(PrologGamePlayer):
-    player_name = 'Legal'
-
     def get_move(self):
         moves = self.game_state.get_legal_moves(self.role)
         first_move = next(moves)
@@ -52,8 +53,6 @@ class Legal(PrologGamePlayer):
 
 
 class Random(PrologGamePlayer):
-    player_name = 'Random'
-
     def get_move(self):
         random_move = None
         for i, move in enumerate(self.game_state.get_legal_moves(self.role)):
@@ -62,26 +61,24 @@ class Random(PrologGamePlayer):
 
         return str(random_move)
 
-class CompulsiveDeliberation(PrologGamePlayer):
-    player_name = 'CompulsiveDeliberation'
-
-    def __init__(self, game_state, role, _start_clock, play_clock):
-        super().__init__(game_state, role, _start_clock, play_clock)
+class SimpleDepthFirstSearch(PrologGamePlayer):
+    def __init__(self, game_state, role, start_clock, play_clock):
+        super().__init__(game_state, role, start_clock, play_clock)
         assert self.game_state.get_num_roles() == 1, \
             "CompulsiveDeliberation player only works for single-player games."
 
-    def get_best_score_and_move(self):
+    def get_best_score_and_move_sequence(self):
         if self.game_state.is_terminal():
-            return self.game_state.get_utility(self.role), None
+            return self.game_state.get_utility(self.role), tuple()
 
-        moves = list(self.game_state.get_legal_moves(self.role))
+        moves = tuple(self.game_state.get_legal_moves(self.role))
 
         best_score = self.MIN_SCORE - 1
-        best_move = None
+        best_move_sequence = tuple()
         for move in moves:
             self.game_state.set_move(self.role, move)
             self.game_state.next_turn()
-            score, _ = self.get_best_score_and_move()
+            score, move_sequence = self.get_best_score_and_move_sequence()
             self.game_state.previous_turn()
 
             assert score >= self.MIN_SCORE
@@ -89,14 +86,26 @@ class CompulsiveDeliberation(PrologGamePlayer):
 
             if score > best_score:
                 best_score = score
-                best_move = move
+                best_move_sequence = (move,) + move_sequence
 
             if best_score == self.MAX_SCORE:
                 break
 
-        return best_score, best_move
+        return best_score, best_move_sequence
+
+class CompulsiveDeliberation(SimpleDepthFirstSearch):
+    def get_move(self):
+        _, move_sequence = self.get_best_score_and_move_sequence()
+        return str(move_sequence[0])
+
+class SequentialPlanner(SimpleDepthFirstSearch):
+    def __init__(self, game_state, role, start_clock, play_clock):
+        super().__init__(game_state, role, start_clock, play_clock)
+        _, move_sequence = self.get_best_score_and_move_sequence()
+        self.move_sequence = list(move_sequence)
 
     def get_move(self):
-        _, move = self.get_best_score_and_move()
+        move = self.move_sequence[0]
+        self.move_sequence.pop(0)
         return str(move)
 

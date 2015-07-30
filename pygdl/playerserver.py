@@ -90,7 +90,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
             raise self.UnknownGameIDError(game_id) from e
 
     def make_info_response(self, is_available):
-        return (('name', self.player_factory.player_name),
+        return (('name', self.player_factory.player_name()),
                 ('status', 'available' if is_available else 'busy'))
 
     def do_info(self, args):
