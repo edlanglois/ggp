@@ -56,8 +56,12 @@ class PrologGameState(object):
         assert sum(1 for _ in self.query('pygdl_game_state_id(X)')) == 1, \
             "Cannot create more than one instance of GameState"
 
-        # Rules used for evaluating game states
+        # Procedures defined by the game description language.
         self.prolog.assertz('distinct(X, Y) :- dif(X, Y)')
+        self.prolog.assertz('or(A, B) :- A')
+        self.prolog.assertz('or(A, B) :- B')
+
+        # Rules used for evaluating game states
         self.prolog.dynamic('turn/1')
         self.prolog.dynamic('does/2')
         self.prolog.dynamic('true/1')
