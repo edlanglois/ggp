@@ -67,6 +67,7 @@ class PrologGameState(object):
         self.prolog.dynamic('true/1')
         self.prolog.dynamic('nexttrue/1')
         self.prolog.dynamic('wastrue/2')
+        self.prolog.dynamic('wasdoes/3')
         self.prolog.assertz(
             """update :-
                 forall(role(Role),
@@ -77,7 +78,9 @@ class PrologGameState(object):
                         legal(Role, Move))),
                 turn(Turn),
                 retractall(wastrue(_, Turn)),
+                retractall(wasdoes(_, _, Turn)),
                 forall(true(Fact), assert(wastrue(Fact, Turn))),
+                forall(does(Role, Move), assert(wasdoes(Role, Move, Turn))),
                 forall(base(Fact), (not(next(Fact)); assert(nexttrue(Fact)))),
                 retractall(true(_)),
                 forall(nexttrue(Fact), assert(true(Fact))),
@@ -89,9 +92,11 @@ class PrologGameState(object):
         self.prolog.assertz(
             """resetturn(Turn) :-
                 wastrue(_, Turn), !,
-                retractall(true(_)),
                 retractall(turn(_)),
+                retractall(true(_)),
+                retractall(does(_, _)),
                 forall(wastrue(Fact, Turn), assert(true(Fact))),
+                forall(wasdoes(Role, Move, Turn), assert(does(Role, Move))),
                 assert(turn(Turn))
             """)
         self.prolog.assertz(
