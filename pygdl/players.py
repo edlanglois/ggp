@@ -114,7 +114,7 @@ class SequentialPlanner(SimpleDepthFirstSearch):
         return str(move)
 
 
-class Minimax(PrologGamePlayer):
+class SearchPlayer(PrologGamePlayer):
     def __init__(self, game_state, role, start_clock, play_clock):
         super().__init__(game_state, role, start_clock, play_clock)
         self.players = tuple(str(role_)
@@ -124,62 +124,181 @@ class Minimax(PrologGamePlayer):
     def succesor_player_index(self, player_index):
         return (player_index + 1) % len(self.players)
 
-    def get_extreme_score_and_move(self, player_index, initial_call=True):
+    def recursive_per_player_search(self, initial_call, player_index,
+                                    *search_args, **search_kwargs):
+        """Search in which one recursive call is made per player turn.
+
+        It is assumed that this player's turn is first.
+        Turns are taken just at the start of the recursive call corresponding
+        to the current player's turn (except on the first call).
+        """
         self.logger.debug("Search %s %s", player_index, initial_call)
-        if not initial_call and player_index == self.own_player_index:
+        is_own_turn = player_index == self.own_player_index
+
+        if is_own_turn and not initial_call:
             mustUndoTurn = True
             self.logger.debug("Next turn")
             self.game_state.next_turn()
         else:
             mustUndoTurn = False
+            if initial_call:
+                assert is_own_turn
 
         try:
-            if self.game_state.is_terminal():
-                return self.game_state.get_utility(self.role), None
-
             current_role = self.players[player_index]
+            is_terminal = self.game_state.is_terminal()
             moves = tuple(self.game_state.get_legal_moves(current_role))
-
-            if player_index == self.own_player_index:
-                best_score = self.MIN_SCORE - 1
-                best_move = None
-                best_possible_score = self.MAX_SCORE
-
-                def is_better_score(new, cur):
-                    return new > cur
-            else:
-                best_score = self.MAX_SCORE + 1
-                best_move = None
-                best_possible_score = self.MIN_SCORE
-
-                def is_better_score(new, cur):
-                    return new < cur
-
-            for move in moves:
-                self.logger.debug("%s:\t%s", str(current_role), str(move))
-                self.game_state.set_move(current_role, move)
-                score, _ = self.get_extreme_score_and_move(
-                    self.succesor_player_index(player_index),
-                    initial_call=False)
-
-                assert score >= self.MIN_SCORE
-                assert score <= self.MAX_SCORE
-
-                if is_better_score(score, best_score):
-                    best_score = score
-                    best_move = move
-
-                if best_score == best_possible_score:
-                    break
-
-            return best_score, best_move
+            return self.search_for_move(player_index=player_index,
+                                        current_role=current_role,
+                                        is_own_turn=is_own_turn,
+                                        is_terminal=is_terminal,
+                                        moves=moves,
+                                        *search_args,
+                                        **search_kwargs)
 
         finally:
             if mustUndoTurn:
                 self.logger.debug("Undo turn")
                 self.game_state.previous_turn()
 
+    def move_and_recursive_search(self, move, player_index, current_role,
+                                  *search_args, **search_kwargs):
+        """Make a move and return result of recursive_per_player_search
+
+        Implementations of search_for_move should call this instead of directly
+        calling recursive_per_player_search.
+        """
+        self.logger.debug("%s:\t%s", str(current_role), str(move))
+        self.game_state.set_move(current_role, move)
+        return self.recursive_per_player_search(
+            initial_call=False,
+            player_index=self.succesor_player_index(player_index),
+            *search_args,
+            **search_kwargs)
+
+    def search_for_move(self,
+                        player_index,
+                        current_role,
+                        is_own_turn,
+                        is_terminal,
+                        moves,
+                        *search_args,
+                        **search_kwargs):
+        raise NotImplementedError
+
+
+class Minimax(SearchPlayer):
+    def search_for_move(self,
+                        player_index,
+                        current_role,
+                        is_own_turn,
+                        is_terminal,
+                        moves):
+        if is_terminal:
+            return self.game_state.get_utility(self.role), None
+
+        if is_own_turn:
+            best_score = float('-Inf')
+            best_possible_score = self.MAX_SCORE
+
+            def is_better_score(new, cur):
+                return new > cur
+        else:
+            best_score = float('Inf')
+            best_possible_score = self.MIN_SCORE
+
+            def is_better_score(new, cur):
+                return new < cur
+
+        best_move = None
+        for move in moves:
+            score, _ = self.move_and_recursive_search(
+                move=move,
+                player_index=player_index,
+                current_role=current_role)
+            assert score >= self.MIN_SCORE
+            assert score <= self.MAX_SCORE
+
+            if is_better_score(score, best_score):
+                best_score = score
+                best_move = move
+
+            if best_score == best_possible_score:
+                break
+
+        return best_score, best_move
+
     def get_move(self):
-        _, move = self.get_extreme_score_and_move(self.own_player_index,
-                                                  initial_call=True)
+        _, move = self.recursive_per_player_search(
+            initial_call=True,
+            player_index=self.own_player_index)
+        return str(move)
+
+
+class AlphaBeta(SearchPlayer):
+    def search_for_move(self,
+                        player_index,
+                        current_role,
+                        is_own_turn,
+                        is_terminal,
+                        moves,
+                        alpha,
+                        beta):
+        if is_terminal:
+            return self.game_state.get_utility(self.role), None
+
+        if is_own_turn:
+            best_score = float('-Inf')
+            best_possible_score = self.MAX_SCORE
+
+            def is_better_score(new, cur):
+                return new > cur
+
+            def update_alpha_beta(alpha, beta, best_score):
+                return max(alpha, best_score), beta
+
+        else:
+            best_score = float('Inf')
+            best_possible_score = self.MIN_SCORE
+
+            def is_better_score(new, cur):
+                return new < cur
+
+            def update_alpha_beta(alpha, beta, best_score):
+                return alpha, min(beta, best_score)
+
+        best_move = None
+        for move in moves:
+            score, _ = self.move_and_recursive_search(
+                move=move,
+                player_index=player_index,
+                current_role=current_role,
+                alpha=alpha,
+                beta=beta)
+            assert score >= self.MIN_SCORE
+            assert score <= self.MAX_SCORE
+
+            if is_better_score(score, best_score):
+                best_score = score
+                best_move = move
+
+                if score > best_score:
+                    best_score = score
+                    best_move = move
+                    alpha, beta = update_alpha_beta(alpha, beta, best_score)
+
+                if alpha >= beta:
+                    break
+
+                if best_score == best_possible_score:
+                    break
+
+        return best_score, best_move
+
+    def get_move(self):
+        _, move = self.recursive_per_player_search(
+            initial_call=True,
+            player_index=self.own_player_index,
+            alpha=float('-Inf'),
+            beta=float('Inf'))
         return str(move)

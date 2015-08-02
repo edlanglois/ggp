@@ -5,11 +5,11 @@ import logging
 
 from pygdl.gamestate import KIFGameState
 from pygdl.players import (Legal, Random, CompulsiveDeliberation,
-                           SequentialPlanner, Minimax)
+                           SequentialPlanner, Minimax, AlphaBeta)
 from pygdl.playerserver import run_player_server
 
 player_classes = [Legal, Random, CompulsiveDeliberation, SequentialPlanner,
-                  Minimax]
+                  Minimax, AlphaBeta]
 player_class_dict = {class_.__name__: class_
                      for class_ in player_classes}
 
