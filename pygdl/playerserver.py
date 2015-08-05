@@ -125,8 +125,11 @@ class SerialGeneralGamePlayingMessageHandler(object):
         game_state = self.game_state_factory()
         game_state.load_game_from_s_expressions(game_description)
 
-        player = self.player_factory(game_state, player_role,
-                                     start_clock, play_clock)
+        player = self.player_factory(
+            game_state=game_state,
+            role=player_role,
+            start_clock=start_clock,
+            play_clock=play_clock)
 
         self.games[game_id] = self.GameStuff(game_state=game_state,
                                              player=player)
@@ -148,7 +151,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
             player.update_moves(new_moves)
 
         move = player.get_move()
-        logger.debug("Chosen move: " + move)
+        logger.info("Selected move: " + move)
         return move
 
     def do_stop(self, args):

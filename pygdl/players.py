@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import logging
 import random
 
@@ -6,11 +7,67 @@ from pygdl.sexpr import to_s_expression_string
 logger = logging.getLogger(__name__)
 
 
+class PlayerFactory(object):
+    """Player factory for PrologGamePlayer"""
+    def __init__(self, player_class, **player_init_kwargs):
+        super().__init__()
+
+        assert (set(player_init_kwargs.keys()) ==
+                set(player_class.PARAMETER_DESCRIPTIONS.keys())),\
+            'Given arguments {!s} but expecting {!s}'.format(
+                set(player_init_kwargs.keys()),
+                set(player_class.PARAMETER_DESCRIPTIONS.keys()))
+
+        self.player_class = player_class
+        self.player_init_kwargs = player_init_kwargs
+
+    def __call__(self, game_state, role, start_clock, play_clock):
+        return self.player_class(game_state=game_state,
+                                 role=role,
+                                 start_clock=start_clock,
+                                 play_clock=play_clock,
+                                 **self.player_init_kwargs)
+
+    def player_name(self):
+        return self.player_class.__name__
+
+class ParameterDescription(object):
+    PARAMS = ['type', 'help', 'choices']
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+        expected_args = set(self.PARAMS)
+        received_args = set(kwargs.keys())
+        if received_args - expected_args:
+            raise TypeError(
+                '__init__ received unexpected argument(s) {}'.format(
+                    received_args - expected_args))
+
+        self.dict = kwargs
+
+
 class PrologGamePlayer(object):
     MIN_SCORE = 0
     MAX_SCORE = 100
 
-    def __init__(self, game_state, role, _start_clock, play_clock):
+    PARAMETER_DESCRIPTIONS = OrderedDict()
+
+    @classmethod
+    def factory(cls, **kwargs):
+        assert set(kwargs.keys()) == set(cls.PARAMETER_DESCRIPTIONS.keys()),\
+            'Given arguments {!s} but expecting {!s}'.format(
+                set(kwargs.keys()), set(cls.PARAMETER_DESCRIPTIONS.keys()))
+
+        def make_player(game_state, role, start_clock, play_clock):
+            return cls(game_state=game_state,
+                       role=role,
+                       start_clock=start_clock,
+                       play_clock=play_clock,
+                       **kwargs)
+        return make_player
+
+    def __init__(self, game_state, role, start_clock, play_clock):
         self.logger = logging.getLogger(__name__ + self.__class__.__name__)
         self.logger.info('Created {!s} with role "{!s}"'.format(
             self.__class__.__name__, role))
@@ -46,6 +103,7 @@ class PrologGamePlayer(object):
 
 
 class Legal(PrologGamePlayer):
+    """Plays the first legal move."""
     def get_move(self):
         moves = self.game_state.get_legal_moves(self.role)
         first_move = next(moves)
@@ -54,6 +112,7 @@ class Legal(PrologGamePlayer):
 
 
 class Random(PrologGamePlayer):
+    """Plays a random legal move."""
     def get_move(self):
         random_move = None
         for i, move in enumerate(self.game_state.get_legal_moves(self.role)):
@@ -97,12 +156,14 @@ class SimpleDepthFirstSearch(PrologGamePlayer):
 
 
 class CompulsiveDeliberation(SimpleDepthFirstSearch):
+    """For each move, find optimal move with DFS."""
     def get_move(self):
         _, move_sequence = self.get_best_score_and_move_sequence()
         return str(move_sequence[0])
 
 
 class SequentialPlanner(SimpleDepthFirstSearch):
+    """On init, find optimal move sequence with DFS. Save and replay it."""
     def __init__(self, game_state, role, start_clock, play_clock):
         super().__init__(game_state, role, start_clock, play_clock)
         _, move_sequence = self.get_best_score_and_move_sequence()
@@ -124,7 +185,7 @@ class SearchPlayer(PrologGamePlayer):
     def succesor_player_index(self, player_index):
         return (player_index + 1) % len(self.players)
 
-    def recursive_per_player_search(self, initial_call, player_index,
+    def recursive_per_player_search(self, depth, player_index,
                                     *search_args, **search_kwargs):
         """Search in which one recursive call is made per player turn.
 
@@ -132,23 +193,24 @@ class SearchPlayer(PrologGamePlayer):
         Turns are taken just at the start of the recursive call corresponding
         to the current player's turn (except on the first call).
         """
-        self.logger.debug("Search %s %s", player_index, initial_call)
+        self.logger.debug("Search %s %s", depth, player_index)
         is_own_turn = player_index == self.own_player_index
 
-        if is_own_turn and not initial_call:
+        if is_own_turn and depth > 0:
             mustUndoTurn = True
             self.logger.debug("Next turn")
             self.game_state.next_turn()
         else:
             mustUndoTurn = False
-            if initial_call:
+            if depth == 0:
                 assert is_own_turn
 
         try:
             current_role = self.players[player_index]
             is_terminal = self.game_state.is_terminal()
             moves = tuple(self.game_state.get_legal_moves(current_role))
-            return self.search_for_move(player_index=player_index,
+            return self.search_for_move(depth=depth,
+                                        player_index=player_index,
                                         current_role=current_role,
                                         is_own_turn=is_own_turn,
                                         is_terminal=is_terminal,
@@ -161,8 +223,8 @@ class SearchPlayer(PrologGamePlayer):
                 self.logger.debug("Undo turn")
                 self.game_state.previous_turn()
 
-    def move_and_recursive_search(self, move, player_index, current_role,
-                                  *search_args, **search_kwargs):
+    def move_and_recursive_search(self, move, depth, player_index,
+                                  current_role, *search_args, **search_kwargs):
         """Make a move and return result of recursive_per_player_search
 
         Implementations of search_for_move should call this instead of directly
@@ -171,12 +233,13 @@ class SearchPlayer(PrologGamePlayer):
         self.logger.debug("%s:\t%s", str(current_role), str(move))
         self.game_state.set_move(current_role, move)
         return self.recursive_per_player_search(
-            initial_call=False,
+            depth=(depth + int(player_index == self.own_player_index)),
             player_index=self.succesor_player_index(player_index),
             *search_args,
             **search_kwargs)
 
     def search_for_move(self,
+                        depth,
                         player_index,
                         current_role,
                         is_own_turn,
@@ -188,7 +251,9 @@ class SearchPlayer(PrologGamePlayer):
 
 
 class Minimax(SearchPlayer):
+    """Runs Minimax algorithm to decide each move."""
     def search_for_move(self,
+                        depth,
                         player_index,
                         current_role,
                         is_own_turn,
@@ -214,6 +279,7 @@ class Minimax(SearchPlayer):
         for move in moves:
             score, _ = self.move_and_recursive_search(
                 move=move,
+                depth=depth,
                 player_index=player_index,
                 current_role=current_role)
             assert score >= self.MIN_SCORE
@@ -230,13 +296,15 @@ class Minimax(SearchPlayer):
 
     def get_move(self):
         _, move = self.recursive_per_player_search(
-            initial_call=True,
+            depth=0,
             player_index=self.own_player_index)
         return str(move)
 
 
 class AlphaBeta(SearchPlayer):
+    """Runs Minimax algorithm with Alpha-Beta pruning to decide each move."""
     def search_for_move(self,
+                        depth,
                         player_index,
                         current_role,
                         is_own_turn,
@@ -271,6 +339,7 @@ class AlphaBeta(SearchPlayer):
         for move in moves:
             score, _ = self.move_and_recursive_search(
                 move=move,
+                depth=depth,
                 player_index=player_index,
                 current_role=current_role,
                 alpha=alpha,
@@ -297,8 +366,54 @@ class AlphaBeta(SearchPlayer):
 
     def get_move(self):
         _, move = self.recursive_per_player_search(
-            initial_call=True,
+            depth=0,
             player_index=self.own_player_index,
             alpha=float('-Inf'),
             beta=float('Inf'))
         return str(move)
+
+
+class BoundedDepth(AlphaBeta):
+    """Runs bounded depth search on each move."""
+
+    PARAMETER_DESCRIPTIONS = OrderedDict([
+        ('max_depth', ParameterDescription(
+            type=int, help='Maximum search depth.')),
+        ('heuristic', ParameterDescription(
+            type=str, choices=['zero', 'utility'], help='Heuristic method.')),
+    ])
+
+    def __init__(self, game_state, role, start_clock, play_clock, max_depth,
+                 heuristic):
+        super().__init__(game_state, role, start_clock, play_clock)
+        self.max_depth = max_depth
+        self.heuristic = heuristic
+
+    def search_for_move(self,
+                        depth,
+                        player_index,
+                        current_role,
+                        is_own_turn,
+                        is_terminal,
+                        moves,
+                        alpha,
+                        beta):
+        if not is_terminal and depth > self.max_depth:
+            return self.current_state_heuristic(), None
+        else:
+            return super().search_for_move(depth,
+                                           player_index,
+                                           current_role,
+                                           is_own_turn,
+                                           is_terminal,
+                                           moves,
+                                           alpha,
+                                           beta)
+
+    def current_state_heuristic(self):
+        if self.heuristic == 'zero':
+            return 0
+        elif self.heuristic == 'utility':
+            return self.game_state.get_utility(self.role)
+        else:
+            raise AssertionError
