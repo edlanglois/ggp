@@ -380,7 +380,8 @@ class BoundedDepth(AlphaBeta):
         ('max_depth', ParameterDescription(
             type=int, help='Maximum search depth.')),
         ('heuristic', ParameterDescription(
-            type=str, choices=['zero', 'utility'], help='Heuristic method.')),
+            type=str, choices=['zero', 'utility', 'mobility'],
+            help='Heuristic method.')),
     ])
 
     def __init__(self, game_state, role, start_clock, play_clock, max_depth,
@@ -388,6 +389,12 @@ class BoundedDepth(AlphaBeta):
         super().__init__(game_state, role, start_clock, play_clock)
         self.max_depth = max_depth
         self.heuristic = heuristic
+
+        roles = list(self.game_state.get_roles())
+        self.num_possible_moves = {
+            str(role_): len(set(self.game_state.get_all_moves(role_)))
+            for role_ in roles
+        }
 
     def search_for_move(self,
                         depth,
@@ -412,8 +419,22 @@ class BoundedDepth(AlphaBeta):
 
     def current_state_heuristic(self):
         if self.heuristic == 'zero':
-            return 0
+            h = self.heuristic_zero()
         elif self.heuristic == 'utility':
-            return self.game_state.get_utility(self.role)
+            h = self.heuristic_utility()
+        elif self.heuristic == 'mobility':
+            h = self.heuristic_mobility()
         else:
             raise AssertionError
+        self.logger.debug("Heuristic: %s", h)
+        return h
+
+    def heuristic_zero(self):
+        return 0
+
+    def heuristic_utility(self):
+        return self.game_state.get_utility(self.role)
+
+    def heuristic_mobility(self):
+        return (float(len(set(self.game_state.get_legal_moves(self.role)))) /
+                self.num_possible_moves[str(self.role)])

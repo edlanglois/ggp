@@ -132,6 +132,18 @@ class PrologGameState(object):
         """Return number of roles in the game."""
         return len(set(self.get_roles()))
 
+    def get_all_moves(self, role):
+        """All possible moves for role in this game.
+
+        This does not represent the currently legal moves.
+        It is a list of all moves which may be available to role at some time
+        in the game.
+        """
+        role = str(role)
+        assert(role == role.lower())
+        return (assignment['Move']
+                for assignment in self.query('input({!s}, Move)'.format(role)))
+
     def get_legal_moves(self, role):
         """An iterable of PrologTerm, each containing a legal move for role."""
         role = str(role)
@@ -310,6 +322,17 @@ class KIFGameState(object):
     def get_num_roles(self):
         """Return number of roles in the game."""
         return self.prolog_game_state.get_num_roles()
+
+    def get_all_moves(self, role):
+        """All possible moves for role in this game.
+
+        This does not represent the currently legal moves.
+        It is a list of all moves which may be available to role at some time
+        in the game.
+        """
+        return self.prolog_assignments_to_kif(
+            self.prolog_game_state.get_all_moves(
+                single_kif_term_to_prolog(str(role))))
 
     def get_legal_moves(self, role):
         """An iterable of KIFTerm, each containing a legal move for role."""
