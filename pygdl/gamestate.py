@@ -3,12 +3,17 @@ import random
 
 from pyswip import Prolog, Functor, Atom
 
-from pygdl.kif import (kif_to_prolog,
-                       kif_s_expr_to_prolog,
-                       single_kif_term_to_prolog)
-from pygdl.sexpr import (parse_s_expressions,
-                         prefix_functional_to_s_expressions,
-                         to_s_expression_string)
+from pygdl.parsing.kif import (
+    kif_to_prolog,
+    kif_s_expr_to_prolog,
+    single_kif_term_to_prolog,
+    single_kif_term_to_s_expression,
+)
+from pygdl.parsing.prolog import (
+    prolog_to_s_expressions,
+    single_prolog_term_to_s_expression,
+)
+from pygdl.parsing.sexpr import to_s_expression_string
 
 logger = logging.getLogger(__name__)
 
@@ -274,17 +279,15 @@ class KIFTerm(object):
         if is_s_expression:
             self.s_expression = kif_term
         else:
-            s_expressions = list(parse_s_expressions([str(kif_term)]))
-            assert len(s_expressions) == 1
-            self.s_expression = s_expressions[0]
+            self.s_expression = single_kif_term_to_s_expression(kif_term)
 
     @staticmethod
     def from_prolog(prolog_term):
         """Generate a KIF term from a prolog string."""
-        s_expressions = \
-            list(prefix_functional_to_s_expressions([str(prolog_term)]))
-        assert len(s_expressions) == 1
-        return KIFTerm(s_expressions[0], is_s_expression=True)
+        return KIFTerm(
+            single_prolog_term_to_s_expression(str(prolog_term)),
+            is_s_expression=True
+        )
 
     def __str__(self):
         return to_s_expression_string(self.s_expression)

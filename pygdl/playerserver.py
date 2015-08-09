@@ -2,7 +2,7 @@ import datetime
 import http.server
 import logging
 
-from pygdl.sexpr import parse_s_expressions, to_s_expression_string
+from pygdl.parsing.sexpr import parse_s_expressions, to_s_expression_string
 
 logger = logging.getLogger(__name__)
 

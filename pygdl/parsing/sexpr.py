@@ -2,7 +2,7 @@
 import logging
 import re
 
-from pygdl.parsing import ParseError
+from pygdl.parsing.exceptions import ParseError
 from pygdl.utils.containers import Bunch
 
 logger = logging.getLogger(__name__)

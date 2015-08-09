@@ -2,7 +2,7 @@ from collections import OrderedDict
 import logging
 import random
 
-from pygdl.sexpr import to_s_expression_string
+from pygdl.parsing.sexpr import to_s_expression_string
 
 logger = logging.getLogger(__name__)
 
