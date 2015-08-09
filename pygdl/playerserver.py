@@ -117,10 +117,10 @@ class SerialGeneralGamePlayingMessageHandler(object):
         start_clock = datetime.timedelta(seconds=int(args[3]))
         play_clock = datetime.timedelta(seconds=int(args[4]))
 
-        logger.debug("Game ID: " + game_id)
-        logger.debug("Player Role: " + player_role)
-        logger.debug("Start clock: " + str(start_clock))
-        logger.debug("Play clock: " + str(play_clock))
+        logger.info("Starting game with ID: " + game_id)
+        logger.info("Player Role: " + player_role)
+        logger.info("Start clock: " + str(start_clock))
+        logger.info("Play clock: " + str(play_clock))
 
         game_state = self.game_state_factory()
         game_state.load_game_from_s_expressions(game_description)
@@ -189,8 +189,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
 
 def make_general_game_playing_request_handler(message_handler):
     class GeneralGamePlayingRequestHandler(http.server.BaseHTTPRequestHandler):
-        def __init__(self, request, client_address, server):
-            super().__init__(request, client_address, server)
+        MAX_LOG_MESSAGE_LEN = 80
 
         def log_message(self, format_, *args):
             logger.debug("Sent: " + format_, *args)
@@ -199,6 +198,9 @@ def make_general_game_playing_request_handler(message_handler):
             content_length = int(self.headers['content-length'])
             message_bytes = self.rfile.read(content_length)
             message = message_bytes.decode()
+            logger.debug("Received message: %r",
+                         message if len(message) <= self.MAX_LOG_MESSAGE_LEN
+                         else message[:self.MAX_LOG_MESSAGE_LEN - 3] + '...')
             message_lines = message.splitlines()
 
             response = None
