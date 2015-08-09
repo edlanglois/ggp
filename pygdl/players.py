@@ -238,6 +238,22 @@ class SearchPlayer(PrologGamePlayer):
             *search_args,
             **search_kwargs)
 
+    def get_current_state_utility(self):
+        return self.game_state.get_utility(self.role)
+
+    def get_best_move_without_search(self, moves, score_required):
+        """Attemps to find the best move without search.
+
+        Returns (found, move, score)
+        found is true if a move was found.
+        move and score are None if no move was found.
+        score may be None even if a move was found.
+        """
+        assert moves
+        if score_required and len(moves) == 0:
+            return True, moves[0], None
+        return False, None, None
+
     def search_for_move(self,
                         depth,
                         player_index,
@@ -258,9 +274,15 @@ class Minimax(SearchPlayer):
                         current_role,
                         is_own_turn,
                         is_terminal,
-                        moves):
+                        moves,
+                        score_required):
         if is_terminal:
-            return self.game_state.get_utility(self.role), None
+            return self.get_current_state_utility(), None
+
+        found, move, score = self.get_best_move_without_search(moves,
+                                                               score_required)
+        if found:
+            return move, score
 
         if is_own_turn:
             best_score = float('-Inf')
@@ -281,7 +303,9 @@ class Minimax(SearchPlayer):
                 move=move,
                 depth=depth,
                 player_index=player_index,
-                current_role=current_role)
+                current_role=current_role,
+                score_required=True
+            )
             assert score >= self.MIN_SCORE
             assert score <= self.MAX_SCORE
 
@@ -297,7 +321,8 @@ class Minimax(SearchPlayer):
     def get_move(self):
         _, move = self.recursive_per_player_search(
             depth=0,
-            player_index=self.own_player_index)
+            player_index=self.own_player_index,
+            score_required=False)
         return str(move)
 
 
@@ -310,10 +335,16 @@ class AlphaBeta(SearchPlayer):
                         is_own_turn,
                         is_terminal,
                         moves,
+                        score_required,
                         alpha,
                         beta):
         if is_terminal:
-            return self.game_state.get_utility(self.role), None
+            return self.get_current_state_utility(), None
+
+        found, move, score = self.get_best_move_without_search(moves,
+                                                               score_required)
+        if found:
+            return move, score
 
         if is_own_turn:
             best_score = float('-Inf')
@@ -342,6 +373,7 @@ class AlphaBeta(SearchPlayer):
                 depth=depth,
                 player_index=player_index,
                 current_role=current_role,
+                score_required=score_required,
                 alpha=alpha,
                 beta=beta)
             assert score >= self.MIN_SCORE
@@ -368,6 +400,7 @@ class AlphaBeta(SearchPlayer):
         _, move = self.recursive_per_player_search(
             depth=0,
             player_index=self.own_player_index,
+            score_required=False,
             alpha=float('-Inf'),
             beta=float('Inf'))
         return str(move)
@@ -403,8 +436,10 @@ class BoundedDepth(AlphaBeta):
                         is_own_turn,
                         is_terminal,
                         moves,
+                        score_required,
                         alpha,
                         beta):
+
         if not is_terminal and depth > self.max_depth:
             return self.current_state_heuristic(), None
         else:
@@ -414,6 +449,7 @@ class BoundedDepth(AlphaBeta):
                                            is_own_turn,
                                            is_terminal,
                                            moves,
+                                           score_required,
                                            alpha,
                                            beta)
 

@@ -50,6 +50,8 @@ class PrologTerm(object):
 class PrologGameState(object):
     """Manage a game state with Prolog."""
     def __init__(self):
+        self.logger = logging.getLogger(__name__ + self.__class__.__name__)
+
         super().__init__()
         self.prolog = Prolog()
         self.is_game_specified = False
