@@ -20,6 +20,13 @@
 		% the Knowledge Interchange Format (KIF) syntax used with GDL.
 		create_game/2,
 
+		% Game ID
+		%
+		% game_id(GameId)
+		%
+		% The ID of a created game.
+		game_id/1,
+
 		% Game State
 		%
 		% game_state(GameId, TruthState, Fact)
@@ -140,19 +147,31 @@
 	]
 ).
 
+game_id_dynamic(_) :- false.
+game_id(GameId) :-
+	game_id_dynamic(GameId).
+
 create_game(GameId, Rules) :-
 	stateify_game_rules(Rules, GameId, StateifiedRules),
 	assert_game_rules(GameId, StateifiedRules).
 
-game_state(_GameId, TruthState, _Moves, true(X)) :-
-	member(X, TruthState).
-game_state(_GameId, _Truth, Moves, does(Role, Action)) :-
-	member(does(Role, Action), Moves).
+game_state(GameId, TruthState, Fact) :-
+	game_id(GameId),
+	game_state_(GameId, TruthState, Fact).
 game_state(GameId, TruthState, Moves, Fact) :-
+	game_id(GameId),
+	legal_prepared_moves(GameId, TruthState, Moves),
+	game_state_(GameId, TruthState, Moves, Fact).
+
+game_state_(_GameId, TruthState, _Moves, true(X)) :-
+	member(X, TruthState).
+game_state_(_GameId, _Truth, Moves, does(Role, Action)) :-
+	member(does(Role, Action), Moves).
+game_state_(GameId, TruthState, Moves, Fact) :-
 	game_state_dynamic(GameId, TruthState, Moves, Fact).
 
-game_state(GameId, TruthState, Fact) :-
-	game_state(GameId, TruthState, none, Fact).
+game_state_(GameId, TruthState, Fact) :-
+	game_state_(GameId, TruthState, none, Fact).
 
 final_truth_state([(_, TruthState) | _], TruthState).
 
@@ -165,7 +184,7 @@ game_truth_state(GameId, MoveHistory, TruthState) :-
 move_history_game_state(GameId, MoveHistory, Fact) :-
 	truth_history(GameId, MoveHistory, TruthHistory),
 	final_truth_state(TruthHistory, TruthState),
-	game_state(GameId, TruthState, Fact).
+	game_state_(GameId, TruthState, Fact).
 
 game_predicates(Rules, GamePredicates) :-
 	findall(PredID,
@@ -262,18 +281,28 @@ stateify_game_rules(Rules, GameId, StateifiedRules) :-
 	wrap_game_rules(Rules,
 	                GamePredicates,
 	                (game_state_dynamic, StateArgs),
-	                (game_state, StateArgs),
+	                (game_state_, StateArgs),
 	                StateifiedRules).
 
+decompile_predicate(Pred) :-
+	Pred = Name/Arity,
+	atom_concat(Name, '__backup_', BackupName),
+	BackupPred = BackupName/Arity,
+	(current_predicate(Pred) -> true; dynamic(Pred)),
+	dynamic(BackupPred),
+	copy_predicate_clauses(Pred, BackupPred),
+	abolish(Pred),
+	dynamic(Pred),
+	copy_predicate_clauses(BackupPred, Pred),
+	abolish(BackupPred).
+
+retractall_from_compiled(Term) :-
+	functor(Term, Name, Arity),
+	decompile_predicate(Name/Arity),
+	retractall(Term).
+
 assert_game_rules(GameId, Rules) :-
-	(current_predicate(game_state_dynamic/4) -> true; dynamic(game_state_dynamic/4)),
-	dynamic(game_state_dynamic_backup/4),
-	copy_predicate_clauses(game_state_dynamic/4, game_state_dynamic_backup/4),
-	retractall(game_state_dynamic_backup(GameId, _, _, _)),
-	abolish(game_state_dynamic/4),
-	dynamic(game_state_dynamic/4),
-	copy_predicate_clauses(game_state_dynamic_backup/4, game_state_dynamic/4),
-	abolish(game_state_dynamic_backup/4),
+	retractall_from_compiled(game_state_dynamic(GameId, _, _, _)),
 	forall(
 		member(Rule, Rules),
 		(
@@ -284,15 +313,20 @@ assert_game_rules(GameId, Rules) :-
 			)),
 			assertz(Rule)
 		)),
-	compile_predicates([game_state_dynamic/4]).
+	compile_predicates([game_state_dynamic/4]),
+	(game_id_dynamic(GameId) -> true; (
+		decompile_predicate(game_id_dynamic/1),
+		assertz(game_id_dynamic(GameId)),
+		compile_predicates([game_id_dynamic/1])
+	)).
 
 % Build a list of the truth states of the game according to a list of moves.
 truth_history(GameId, [], [(start, TruthState)]) :-
 	setof(
 		Fact,
 		(
-			game_state(GameId, _, _, base(Fact)),
-			game_state(GameId, _, _, init(Fact))
+			game_state_(GameId, _, _, base(Fact)),
+			game_state_(GameId, _, _, init(Fact))
 		),
 		TruthState).
 
@@ -350,10 +384,10 @@ current_truth(GameId,
 		                true)),
 	[(_, PrevTruth) | _] = TruthHistory,
 	all_moves_legal(GameId, PrevTruth, Moves),
-	setof(X, game_state(GameId, PrevTruth, Moves, next(X)), TruthState).
+	setof(X, game_state_(GameId, PrevTruth, Moves, next(X)), TruthState).
 
 simple_validate_moves(GameId, Moves) :-
-	setof(Role, game_state(GameId, _, _, role(Role)), Roles),
+	setof(Role, game_state_(GameId, _, _, role(Role)), Roles),
 	simple_validate_ordered_moves(Roles, Moves).
 
 simple_validate_ordered_moves([], []).
@@ -363,7 +397,7 @@ simple_validate_ordered_moves([Role | Roles], [Move | Moves]) :-
 
 all_moves_legal(_GameId, _Truth, []).
 all_moves_legal(GameId, TruthState, [does(Role, Action) | Moves]) :-
-	game_state(GameId, TruthState, legal(Role, Action)),
+	game_state_(GameId, TruthState, legal(Role, Action)),
 	all_moves_legal(GameId, TruthState, Moves).
 
 % Predicates to be used by the game rules
