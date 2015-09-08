@@ -321,7 +321,37 @@ assert_game_rules(GameId, Rules) :-
 	)).
 
 % Build a list of the truth states of the game according to a list of moves.
-truth_history(GameId, [], [(start, TruthState)]) :-
+truth_history(GameId, MoveHistory, TruthHistory) :-
+	truth_history(GameId, MoveHistory, [], TruthHistory).
+
+% Truth history where an alternate cached history is provided.
+% The cached history is used as much as possible.
+truth_history(GameId, MoveHistory, CachedTruthHistory, TruthHistory) :-
+	length(MoveHistory, NumMoves),
+	succ(NumMoves, NumStates),
+	length(TruthHistory, NumStates),
+	length(CachedTruthHistory, CachedTruthHistoryLen),
+	truth_history_lengths(GameId, MoveHistory, CachedTruthHistory,
+	                      NumStates, CachedTruthHistoryLen,
+	                      TruthHistory).
+
+truth_history_lengths(GameId, MoveHistory, CachedTruthHistory,
+                      NumStates, NumStates,
+                      TruthHistory) :-
+	truth_history_aligned(GameId, MoveHistory, CachedTruthHistory, TruthHistory).
+
+truth_history_lengths(GameId, MoveHistory, CachedTruthHistory,
+                      NumStates, CachedTruthHistoryLen,
+                      TruthHistory) :-
+	CachedTruthHistoryLen > NumStates,
+	length(AlignedCachedTruthHistory, NumStates),
+	append(_, AlignedCachedTruthHistory, CachedTruthHistory),
+	truth_history_aligned(GameId, MoveHistory,
+	                      AlignedCachedTruthHistory, TruthHistory).
+
+truth_history_lengths(GameId, [], [],
+                      1, 0,
+                      [(start, TruthState)]) :-
 	setof(
 		Fact,
 		(
@@ -329,36 +359,46 @@ truth_history(GameId, [], [(start, TruthState)]) :-
 			game_state_(GameId, _, _, init(Fact))
 		),
 		TruthState).
-
-truth_history(GameId,
-              [Moves | MoveHistory],
-              [(Moves, TruthState) | TruthHistory]) :-
+truth_history_lengths(GameId, [Moves | MoveHistory], CachedTruthHistory,
+                      NumStates, CachedTruthHistoryLen,
+                      [(Moves, TruthState)| TruthHistory]):-
+	CachedTruthHistoryLen < NumStates,
+	succ(NumStatesRest, NumStates),
 	simple_validate_moves(GameId, Moves),
-	truth_history(GameId, MoveHistory, TruthHistory),
+	truth_history_lengths(GameId, MoveHistory, CachedTruthHistory,
+	                      NumStatesRest, CachedTruthHistoryLen,
+	                      TruthHistory),
 	current_truth(GameId, false, TruthHistory, Moves, _, (Moves, TruthState), _).
 
-% Truth history where an alternate cached history is provided.
-% The cache is used as much as possible.
-truth_history(GameId, MoveHistory, CachedTruthHistory, TruthHistory) :-
-	truth_history(GameId, MoveHistory, CachedTruthHistory, TruthHistory, _).
-truth_history(GameId,
-              [Moves | MoveHistory],
-              [CachedMovesTruth | CachedTruthHistory],
-              [MovesTruth | TruthHistory],
-              CacheMatches) :-
+
+truth_history_aligned(GameId, MoveHistory, CachedTruthHistory, TruthHistory) :-
+	truth_history_aligned(GameId, MoveHistory, CachedTruthHistory, TruthHistory,
+	                      _).
+truth_history_aligned(_GameId,
+                      [],
+                      [(start, TruthState)],
+                      [(start, TruthState)],
+                      true) :-
+	(ground(TruthState) -> true; throw(error(instantiation_error, TruthState))).
+truth_history_aligned(GameId,
+                      [Moves | MoveHistory],
+                      [CachedMovesTruth | CachedTruthHistory],
+                      [MovesTruth | TruthHistory],
+                      CacheMatches) :-
 	simple_validate_moves(GameId, Moves),
-	truth_history(GameId,
-                MoveHistory,
-                CachedTruthHistory,
-                TruthHistory,
-                RestCacheMatches),
+	truth_history_aligned(GameId,
+	                      MoveHistory,
+	                      CachedTruthHistory,
+	                      TruthHistory,
+	                      RestCacheMatches),
 	current_truth(GameId,
-                RestCacheMatches,
-                TruthHistory,
-                Moves,
-                CachedMovesTruth,
-                MovesTruth,
-                CacheMatches).
+	              RestCacheMatches,
+	              TruthHistory,
+	              Moves,
+	              CachedMovesTruth,
+	              MovesTruth,
+	              CacheMatches).
+
 
 current_truth(_GameId,
               true,
@@ -367,21 +407,21 @@ current_truth(_GameId,
               (Moves, TruthState),
               (Moves, TruthState),
               true) :-
-	ground(TruthState).
+	(ground(TruthState) -> true; throw(error(instantiation_error, TruthState))).
 current_truth(GameId,
-              _RestCacheMatches,
+              RestCacheMatches,
               TruthHistory,
               Moves,
               CachedMovesTruth,
               (Moves, TruthState),
               false) :-
 	not(current_truth(GameId,
-	                  true,
+	                  RestCacheMatches,
 	                  TruthHistory,
 	                  Moves,
 	                  CachedMovesTruth,
 	                  (Moves, TruthState),
-		                true)),
+	                  true)),
 	[(_, PrevTruth) | _] = TruthHistory,
 	all_moves_legal(GameId, PrevTruth, Moves),
 	setof(X, game_state_(GameId, PrevTruth, Moves, next(X)), TruthState).
