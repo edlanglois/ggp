@@ -2,7 +2,12 @@ import datetime
 import http.server
 import logging
 
-from pygdl.parsing.sexpr import parse_s_expressions, to_s_expression_string
+from pygdl.languages.prolog import PrologTerm, UnparsedPrologTerm
+from pygdl.languages.sexpressions import s_expression_parser, SExpression
+from pygdl.languages.translate.pgdl_prolog import (
+    translate_prefix_gdl_to_prolog_terms,
+    translate_prolog_term_to_prefix_gdl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,36 +45,27 @@ class NumberOfArgumentsError(ArgumentError):
             self.message_type, self.expected_len, self.arguments)
 
 
-# TODO: No need for game_state
 class SerialGeneralGamePlayingMessageHandler(object):
-    """Handles General-Game-Playing messages all in one thread."""
-    class GameStuff(object):
-        def __init__(self, game_state, player):
-            self.game_state = game_state
-            self.player = player
+    """Handles General-Game-Playing messages all in one thread.
 
+    The only ID involved in the GGP protocol is the game ID, which identifies
+    the rules, not a game session.
+    It is impossible to disambiguate messages to multiple players playing the
+    same game. Therefore each game is allowed at most one associated player.
+    """
     class UnknownGameIDError(Exception):
         def __init__(self, id):
             self.id = id
 
-    def __init__(self, player_factory, game_state_factory,
-                 max_simultaneous_games=1):
+    def __init__(self, game_manager, player_factory):
         super().__init__()
+
+        self.game_manager = game_manager
         self.player_factory = player_factory
-        self.game_state_factory = game_state_factory
-        self.max_simultaneous_games = max_simultaneous_games
-        self.games = dict()
+        self.game_players = dict()
 
     def handle_message(self, message):
-        message_s_expressions = parse_s_expressions(message)
-        message_s_expression = next(message_s_expressions)
-        try:
-            next(message_s_expressions)
-            raise BadMessageError(
-                "Message must contain exactly one S-Expression")
-        except StopIteration:
-            pass
-
+        message_s_expression = s_expression_parser.parse_expression(message)
         message_type = message_s_expression[0]
         try:
             handler = getattr(self, 'do_' + message_type)
@@ -82,27 +78,26 @@ class SerialGeneralGamePlayingMessageHandler(object):
         except self.UnknownGameIDError as e:
             logger.warning("Received message for unknown game id '%s'", e.id)
 
-    def get_game(self, game_id):
-        """Return the GameStuff associated with id"""
+    def get_game_player(self, game_id):
+        """Return the player associated with id"""
         try:
             return self.games[game_id]
         except KeyError as e:
             raise self.UnknownGameIDError(game_id) from e
 
     def make_info_response(self, is_available):
-        return (('name', self.player_factory.player_name()),
-                ('status', 'available' if is_available else 'busy'))
+        return SExpression((
+            SExpression(('name', self.player_factory.player_name())),
+            SExpression(('status', 'available' if is_available else 'busy'))))
 
     def do_info(self, args):
         logger.info("Received info message.")
         if args:
             raise NumberOfArgumentsError('info', args, 0)
-        return self.make_info_response(
-            len(self.games) < self.max_simultaneous_games)
+        return self.make_info_response(True)
 
     def do_start(self, args):
         logger.info("Received start message.")
-        logger.debug("Num active games: " + str(len(self.games)))
         if len(args) != 5:
             raise NumberOfArgumentsError('start', args, 5)
 
@@ -117,22 +112,28 @@ class SerialGeneralGamePlayingMessageHandler(object):
         start_clock = datetime.timedelta(seconds=int(args[3]))
         play_clock = datetime.timedelta(seconds=int(args[4]))
 
+        if game_id in self.game_players:
+            raise ForbiddenMessageError(
+                """Received start message for {game!s} but it is already
+                being played by player {player!s}.""".format(
+                    game=game_id, player=self.game_players[game_id]))
+
         logger.info("Starting game with ID: " + game_id)
         logger.info("Player Role: " + player_role)
         logger.info("Start clock: " + str(start_clock))
         logger.info("Play clock: " + str(play_clock))
 
-        game_state = self.game_state_factory()
-        game_state.load_game_from_s_expressions(game_description)
+        self.game_manager.create_game(
+            game_id,
+            translate_prefix_gdl_to_prolog_terms(game_description))
 
         player = self.player_factory(
-            game_state=game_state,
+            game=self.game_manager.game(game_id),
             role=player_role,
             start_clock=start_clock,
             play_clock=play_clock)
 
-        self.games[game_id] = self.GameStuff(game_state=game_state,
-                                             player=player)
+        self.games[game_id] = player
         return 'ready'
 
     def do_play(self, args):
@@ -151,8 +152,12 @@ class SerialGeneralGamePlayingMessageHandler(object):
             player.update_moves(new_moves)
 
         move = player.get_move()
-        logger.info("Selected move: " + move)
-        return move
+        logger.info("Selected move: " + str(move))
+        if not isinstance(move, PrologTerm):
+            move = UnparsedPrologTerm(str(move))
+        if isinstance(move, UnparsedPrologTerm):
+            move = move.parse()
+        return translate_prolog_term_to_prefix_gdl(move)
 
     def do_stop(self, args):
         logger.info("Received stop message.")
@@ -171,7 +176,6 @@ class SerialGeneralGamePlayingMessageHandler(object):
 
         player.stop()
         return 'done'
-
 
     def do_abort(self, args):
         logger.info("Received abort message.")
@@ -217,7 +221,7 @@ def make_general_game_playing_request_handler(message_handler):
             if response is None:
                 response_str = ''
             else:
-                response_str = to_s_expression_string(response)
+                response_str = str(response)
             response_bytes = response_str.encode()
 
             self.send_response(response_code)

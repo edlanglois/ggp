@@ -31,6 +31,7 @@ class PlayerFactory(object):
     def player_name(self):
         return self.player_class.__name__
 
+
 class ParameterDescription(object):
     PARAMS = ['type', 'help', 'choices']
 
@@ -108,7 +109,7 @@ class Legal(PrologGamePlayer):
         moves = self.game_state.get_legal_moves(self.role)
         first_move = next(moves)
         moves.close()
-        return str(first_move)
+        return first_move
 
 
 class Random(PrologGamePlayer):
@@ -119,7 +120,7 @@ class Random(PrologGamePlayer):
             if random.randint(0, i) == 0:
                 random_move = move
 
-        return str(random_move)
+        return random_move
 
 
 class SimpleDepthFirstSearch(PrologGamePlayer):
@@ -159,7 +160,7 @@ class CompulsiveDeliberation(SimpleDepthFirstSearch):
     """For each move, find optimal move with DFS."""
     def get_move(self):
         _, move_sequence = self.get_best_score_and_move_sequence()
-        return str(move_sequence[0])
+        return move_sequence[0]
 
 
 class SequentialPlanner(SimpleDepthFirstSearch):
@@ -172,7 +173,7 @@ class SequentialPlanner(SimpleDepthFirstSearch):
     def get_move(self):
         move = self.move_sequence[0]
         self.move_sequence.pop(0)
-        return str(move)
+        return move
 
 
 class SearchPlayer(PrologGamePlayer):
@@ -323,7 +324,7 @@ class Minimax(SearchPlayer):
             depth=0,
             player_index=self.own_player_index,
             score_required=False)
-        return str(move)
+        return move
 
 
 class AlphaBeta(SearchPlayer):
@@ -403,7 +404,7 @@ class AlphaBeta(SearchPlayer):
             score_required=False,
             alpha=float('-Inf'),
             beta=float('Inf'))
-        return str(move)
+        return move
 
 
 class BoundedDepth(AlphaBeta):
