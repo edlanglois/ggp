@@ -1,7 +1,13 @@
 import logging
 import os.path
 
-from pygdl.prolog import PrologSession, PrologTerm, PrologList
+from pygdl.prolog import PrologSession
+from pygdl.languages.prolog import (
+    PrologAtom,
+    PrologCompoundTerm,
+    PrologList,
+    PrologTerm,
+)
 from pygdl.paths import prolog_dir
 
 logger = logging.getLogger(__name__)
@@ -28,7 +34,7 @@ class GeneralGameManager(object):
     def create_game(self, game_id, rules):
         self.prolog.require_query(
             'create_game({game_id!s}, {rules!s})'.format(
-                game_id=game_id, rules=rules))
+                game_id=game_id, rules=PrologList(rules)))
 
     def game(self, game_id):
         """Get a GeneralGame object representing game_id"""
@@ -36,16 +42,16 @@ class GeneralGameManager(object):
 
     @staticmethod
     def game_state_query_term_single(game_id, game_state, query):
-        return PrologTerm(name='game_state',
-                          args=(game_id, game_state, query))
+        return PrologCompoundTerm(name='game_state',
+                                  args=(game_id, game_state, query))
 
     @staticmethod
     def game_state_query_term(game_id, game_state, *queries):
         """Prolog term representing a query to a game state."""
         assert(queries)
         return PrologTerm.and_(*(
-            PrologTerm(name='game_state',
-                       args=(game_id, game_state, query))
+            PrologCompoundTerm(name='game_state',
+                               args=(game_id, game_state, query))
             for query in queries))
 
 
@@ -57,7 +63,7 @@ class GeneralGame(object):
     """A general game."""
     def __init__(self, game_manager, game_id):
         self.game_manager = game_manager
-        self.game_id = PrologTerm.make(name=game_id)
+        self.game_id = PrologAtom(name=game_id)
 
     def initial_state(self):
         """Return the initial state of the game as a GeneralGameState"""
@@ -85,7 +91,7 @@ class GeneralGame(object):
                 for assignment
                 in self._prolog().query(
                     self.stateless_query_term(
-                        PrologTerm(name='input', args=(role, 'Move')))))
+                        PrologCompoundTerm(name='input', args=(role, 'Move')))))
 
     def base_terms(self):
         """A list of the terms which define the game state."""
@@ -94,7 +100,7 @@ class GeneralGame(object):
                     self.stateless_query_term('base(X)')))
 
     def stateless_query_term(self, *queries):
-        return self.stateful_query_term(PrologTerm(name='none'), *queries)
+        return self.stateful_query_term(PrologAtom('none'), *queries)
 
     def stateful_query_term(self, state, *queries):
         return self.game_manager.game_state_query_term(
@@ -113,7 +119,7 @@ class GeneralGameState(object):
         self.game = game
 
         if move_history is None:
-            self.move_history = PrologList([])
+            self.move_history = PrologList()
         else:
             self.move_history = move_history
 
@@ -121,9 +127,10 @@ class GeneralGameState(object):
             assert truth_state is None
             assignment = self._prolog().query_first(
                 PrologTerm.and_(
-                    PrologTerm(name='truth_history',
-                               args=(self.game_id(), self.move_history,
-                                     'TruthHistory')),
+                    PrologCompoundTerm(
+                        name='truth_history',
+                        args=(self.game_id(), self.move_history,
+                              'TruthHistory')),
                     'final_truth_state(TruthHistory, TruthState)'))
 
             self.truth_history = assignment['TruthHistory']
@@ -133,8 +140,9 @@ class GeneralGameState(object):
 
             if truth_state is None:
                 assignment = self._prolog().query_first(
-                    PrologTerm(name='final_truth_state',
-                               args=(self.truth_history, 'TruthState')))
+                    PrologCompoundTerm(
+                        name='final_truth_state',
+                        args=(self.truth_history, 'TruthState')))
                 self.truth_state = assignment['TruthState']
             else:
                 self.truth_state = truth_state
@@ -146,8 +154,9 @@ class GeneralGameState(object):
     def utility(self, role):
         """The utility of the current state for the given role."""
         return int(self._prolog().query_first(
-            self.query_term(PrologTerm(name='goal',
-                                       args=(role, 'Utility'))))['Utility'])
+            self.query_term(PrologCompoundTerm(
+                name='goal',
+                args=(role, 'Utility'))))['Utility'])
 
     def legal_moves(self, role):
         """An iterator of legal moves for role in the current state."""
@@ -155,7 +164,7 @@ class GeneralGameState(object):
                 for assignment
                 in self._prolog().query(
                     self.query_term(
-                        PrologTerm(name='legal', args=(role, 'Move')))))
+                        PrologCompoundTerm(name='legal', args=(role, 'Move')))))
 
     def state_terms(self):
         """Iterator of the base terms that are true for this state."""
@@ -175,23 +184,26 @@ class GeneralGameState(object):
         moves is a dictionary of role => move.
         """
         moves_term = PrologList(tuple(
-            PrologTerm(name='does', args=(role, action))
+            PrologCompoundTerm(name='does', args=(role, action))
             for (role, action) in moves.items()))
         print("Moves Term:", str(moves_term))
         print("Old Move History:", str(self.move_history))
 
         assignment = self._prolog().query_first(
             PrologTerm.and_(
-                PrologTerm(name='prepare_moves',
-                           args=(self.game_id(), moves_term, 'PreparedMoves')),
-                PrologTerm(name='=',
-                           args=('MoveHistory',
-                                 PrologTerm(name='[|]',
-                                            args=('PreparedMoves',
-                                                  self.move_history)))),
-                PrologTerm(name='truth_history',
-                           args=(self.game_id(), 'MoveHistory',
-                                 self.truth_history, 'TruthHistory')),
+                PrologCompoundTerm(
+                    name='prepare_moves',
+                    args=(self.game_id(), moves_term, 'PreparedMoves')),
+                PrologCompoundTerm(
+                    name='=',
+                    args=('MoveHistory',
+                          PrologCompoundTerm(
+                              name='[|]',
+                              args=('PreparedMoves', self.move_history)))),
+                PrologCompoundTerm(
+                    name='truth_history',
+                    args=(self.game_id(), 'MoveHistory',
+                          self.truth_history, 'TruthHistory')),
                 'final_truth_state(TruthHistory, TruthState)',
             ))
         return GeneralGameState(

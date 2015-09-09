@@ -63,8 +63,7 @@ class _PrefixGdlToPrologTerm(prefixgdl.PrefixGdlParser):
         self.compound_term.addParseAction(self._prolog_compound_term)
 
     def translate(self, instring):
-        for term in self.parse(instring):
-            yield term
+        return list(self.parse(instring))
 
     @staticmethod
     def _translate_variable(toks):

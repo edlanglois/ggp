@@ -4,7 +4,7 @@ import logging
 
 from pygdl.languages.prolog import PrologTerm, UnparsedPrologTerm
 from pygdl.languages.sexpressions import s_expression_parser, SExpression
-from pygdl.languages.translate.pgdl_prolog import (
+from pygdl.languages.translation.pgdl_prolog import (
     translate_prefix_gdl_to_prolog_terms,
     translate_prolog_term_to_prefix_gdl,
 )
@@ -65,6 +65,8 @@ class SerialGeneralGamePlayingMessageHandler(object):
         self.game_players = dict()
 
     def handle_message(self, message):
+        message = ' '.join(message)
+        logger.info(message)
         message_s_expression = s_expression_parser.parse_expression(message)
         message_type = message_s_expression[0]
         try:
@@ -77,11 +79,16 @@ class SerialGeneralGamePlayingMessageHandler(object):
             return handler(message_s_expression[1:])
         except self.UnknownGameIDError as e:
             logger.warning("Received message for unknown game id '%s'", e.id)
+        except:
+            import pdb, traceback, sys
+            type_, value, tb = sys.exc_info()
+            traceback.print_exc()
+            pdb.post_mortem(tb)
 
     def get_game_player(self, game_id):
         """Return the player associated with id"""
         try:
-            return self.games[game_id]
+            return self.game_players[game_id]
         except KeyError as e:
             raise self.UnknownGameIDError(game_id) from e
 
@@ -100,11 +107,6 @@ class SerialGeneralGamePlayingMessageHandler(object):
         logger.info("Received start message.")
         if len(args) != 5:
             raise NumberOfArgumentsError('start', args, 5)
-
-        if len(self.games) >= self.max_simultaneous_games:
-            raise ForbiddenMessageError(
-                'Max simultaneous games ({!s}) reached'.format(
-                    self.max_simultaneous_games))
 
         game_id = args[0]
         player_role = args[1]
@@ -125,7 +127,8 @@ class SerialGeneralGamePlayingMessageHandler(object):
 
         self.game_manager.create_game(
             game_id,
-            translate_prefix_gdl_to_prolog_terms(game_description))
+            translate_prefix_gdl_to_prolog_terms(
+                '\n'.join(str(expr) for expr in game_description)))
 
         player = self.player_factory(
             game=self.game_manager.game(game_id),
@@ -133,7 +136,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
             start_clock=start_clock,
             play_clock=play_clock)
 
-        self.games[game_id] = player
+        self.game_players[game_id] = player
         return 'ready'
 
     def do_play(self, args):
@@ -149,7 +152,8 @@ class SerialGeneralGamePlayingMessageHandler(object):
         player = self.get_game(game_id).player
 
         if new_moves != 'nil':
-            player.update_moves(new_moves)
+            player.update_moves(
+                translate_prefix_gdl_to_prolog_terms(str(new_moves)))
 
         move = player.get_move()
         logger.info("Selected move: " + str(move))
@@ -238,10 +242,11 @@ def make_general_game_playing_request_handler(message_handler):
     return GeneralGamePlayingRequestHandler
 
 
-def run_player_server(player_factory, game_state_factory, port=9147):
+def run_player_server(game_manager, player_factory, port=9147):
     handler = make_general_game_playing_request_handler(
-        SerialGeneralGamePlayingMessageHandler(player_factory,
-                                               game_state_factory))
+        SerialGeneralGamePlayingMessageHandler(
+            game_manager=game_manager,
+            player_factory=player_factory))
     server = http.server.HTTPServer(('', port), handler)
     logger.info('Server listening on port {!s}'.format(port))
     try:

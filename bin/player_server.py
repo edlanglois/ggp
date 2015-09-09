@@ -4,7 +4,6 @@ import argparse
 import inspect
 import logging
 
-from pygdl.gamestate import KIFGameState
 from pygdl.players import (
     PlayerFactory,
     AlphaBeta,
@@ -15,8 +14,6 @@ from pygdl.players import (
     Random,
     SequentialPlanner,
 )
-from pygdl.playerserver import run_player_server
-
 player_classes = [
     Legal,
     AlphaBeta,
@@ -26,9 +23,6 @@ player_classes = [
     Random,
     SequentialPlanner,
 ]
-player_class_dict = {class_.__name__: class_
-                     for class_ in player_classes}
-
 
 class LogLevel(object):
     levels = ['debug', 'info', 'warning', 'error', 'critical']
@@ -41,7 +35,7 @@ class LogLevel(object):
 
 parser = argparse.ArgumentParser(description="General Game Player Server")
 parser.add_argument('-P', '--port', type=int, default=9147,
-                    help="Port on which the server listens.")
+                    help="Port on which the server listens. (default 9147)")
 parser.add_argument('--log-level', type=LogLevel, default='info',
                     help=("Set logging level. "
                           "Either an integer value or one of: "
@@ -50,6 +44,7 @@ parser.add_argument('--log-level', type=LogLevel, default='info',
 subparsers = parser.add_subparsers(
     title='Players', dest='player', metavar='PLAYER',
     help='Game player class.')
+subparsers.required = True
 
 for player in player_classes:
     player_parser = subparsers.add_parser(player.__name__,
@@ -59,9 +54,18 @@ for player in player_classes:
 
 args = parser.parse_args()
 
+from pygdl.gamestate import GeneralGameManager
+from pygdl.playerserver import run_player_server
+
+player_class_dict = {class_.__name__: class_
+                     for class_ in player_classes}
+
+
 logging.basicConfig(level=args.log_level.level)
 player_class = player_class_dict[args.player]
 player_kwargs = {param_name: getattr(args, param_name)
                  for param_name in player_class.PARAMETER_DESCRIPTIONS.keys()}
 player_factory = PlayerFactory(player_class, **player_kwargs)
-run_player_server(player_factory, KIFGameState)
+game_manager = GeneralGameManager()
+run_player_server(game_manager=game_manager,
+                  player_factory=player_factory)

@@ -2,8 +2,6 @@ from collections import OrderedDict
 import logging
 import random
 
-from pygdl.parsing.sexpr import to_s_expression_string
-
 logger = logging.getLogger(__name__)
 
 
@@ -21,8 +19,8 @@ class PlayerFactory(object):
         self.player_class = player_class
         self.player_init_kwargs = player_init_kwargs
 
-    def __call__(self, game_state, role, start_clock, play_clock):
-        return self.player_class(game_state=game_state,
+    def __call__(self, game, role, start_clock, play_clock):
+        return self.player_class(game=game,
                                  role=role,
                                  start_clock=start_clock,
                                  play_clock=play_clock,
@@ -54,45 +52,33 @@ class PrologGamePlayer(object):
 
     PARAMETER_DESCRIPTIONS = OrderedDict()
 
-    @classmethod
-    def factory(cls, **kwargs):
-        assert set(kwargs.keys()) == set(cls.PARAMETER_DESCRIPTIONS.keys()),\
-            'Given arguments {!s} but expecting {!s}'.format(
-                set(kwargs.keys()), set(cls.PARAMETER_DESCRIPTIONS.keys()))
-
-        def make_player(game_state, role, start_clock, play_clock):
-            return cls(game_state=game_state,
-                       role=role,
-                       start_clock=start_clock,
-                       play_clock=play_clock,
-                       **kwargs)
-        return make_player
-
-    def __init__(self, game_state, role, start_clock, play_clock):
+    def __init__(self, game, role, start_clock, play_clock):
         self.logger = logging.getLogger(__name__ + self.__class__.__name__)
         self.logger.info('Created {!s} with role "{!s}"'.format(
             self.__class__.__name__, role))
-        self.game_state = game_state
+        self.game = game
         self.role = role
         self.play_clock = play_clock
+
+        self.roles = tuple(self.game.roles())
+        self.game_state = self.game.initial_state()
 
     @classmethod
     def player_name(cls):
         return cls.__class__.__name__
 
     def update_moves(self, new_moves):
-        roles = list(self.game_state.get_roles())
-        roles = list(self.game_state.get_roles())
-        assert(len(roles) == len(new_moves))
+        assert(len(self.roles) == len(new_moves))
 
         self.logger.debug("GAME DESCRIPTION FOR TURN %s",
                           self.game_state.get_turn())
         for base in self.game_state.get_state_terms():
             self.logger.debug("\t%s", str(base))
 
-        for role, move in zip(roles, new_moves):
-            self.game_state.set_move(role, to_s_expression_string(move))
-        self.game_state.next_turn()
+        moves = {role: move
+                 for role, move in zip(self.roles, new_moves)}
+
+        self.game_state = self.game_state.apply_moves(moves)
 
     def stop(self):
         self.logger.info('Stopping game. Terminal: {!s}. Score: {!s}'.format(

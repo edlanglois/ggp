@@ -1,5 +1,6 @@
 """S-Expressions"""
 from pyparsing import (
+    Forward,
     Group,
     Literal,
     Suppress,
@@ -13,7 +14,7 @@ from pyparsing import (
 class SExpression(tuple):
     def __str__(self):
         return '({})'.format(
-            ', '.join(str(subexpr) for subexpr in self))
+            ' '.join(str(subexpr) for subexpr in self))
 
     def __repr__(self):
         return '{name}({arg!s})'.format(
@@ -33,18 +34,23 @@ class SExpressionList(tuple):
 
 class SExpressionParser(object):
     def __init__(self):
-        self.lpar = Literal('(')('lpar')
-        self.rpar = Literal(')')('rpar')
+        self.lpar = Literal('(')
+        self.rpar = Literal(')')
 
         self.word_chars = ''.join(c for c in printables if c not in ('()'))
         self.word = Word(self.word_chars) | quotedString
-        self.atom = self.word('atom')
+        self.atom = self.word
 
-        self.expression = Group(
+        self.expression = Forward()
+
+        self.composite_expression = (
             Suppress(self.lpar) +
-            ZeroOrMore(self.atom) +
-            Suppress(self.rpar))('expression')
-        self.expression.addParseAction(self._expression_to_tuple)
+            ZeroOrMore(self.expression) +
+            Suppress(self.rpar))('composite_expression')
+        self.composite_expression.addParseAction(
+            self._composite_expression_to_tuple)
+
+        self.expression << (self.atom | self.composite_expression)
 
         self.expressions = Group(ZeroOrMore(self.expression))('expressions')
         self.expressions.addParseAction(self._expressions_to_tuple)
@@ -56,8 +62,8 @@ class SExpressionParser(object):
         return self.expressions.parseString(instring, parseAll=True)[0]
 
     @staticmethod
-    def _expression_to_tuple(toks):
-        return SExpression(toks.expression)
+    def _composite_expression_to_tuple(toks):
+        return SExpression(toks.composite_expression)
 
     @staticmethod
     def _expressions_to_tuple(toks):

@@ -35,6 +35,16 @@ PrologOperators = _get_prolog_operators()
 
 class PrologTerm(object):
     """Representation of a Prolog term."""
+    @staticmethod
+    def make_from_basic_type(term):
+        if isinstance(term, str):
+            return UnparsedPrologTerm(term)
+        elif isinstance(term, int):
+            return PrologInteger(term)
+        elif isinstance(term, float):
+            return PrologFloat(term)
+        else:
+            raise AssertionError('Unexpected type: {}'.format(type(term)))
 
     @staticmethod
     def make_from_pyswip_term(pyswip_term, variable_map={}):
@@ -55,6 +65,8 @@ class PrologTerm(object):
                 name=str(pyswip_term.name),
                 args=tuple(PrologTerm.make_from_pyswip_term(arg, variable_map)
                            for arg in pyswip_term.args))
+        elif isinstance(pyswip_term, list):
+            return PrologList(pyswip_term)
         else:
             raise AssertionError(
                 'Unexpected type: {}'.format(type(pyswip_term)))
@@ -180,7 +192,9 @@ class UnparsedPrologTerm(PrologTerm):
 class ParsedPrologTerm(PrologTerm):
     def __init__(self, name, args):
         self.name = name
-        self.args = args
+        self.args = [arg if isinstance(arg, PrologTerm)
+                     else PrologTerm.make_from_basic_type(arg)
+                     for arg in args]
         self.precedence = 0
 
     def str_precedence_less_equal(self, precedence):
@@ -243,7 +257,7 @@ class PrologNumber(PrologConstant):
 
     def __repr__(self):
         return '{}(value={value!s})'.format(
-            self.__class_.__name__, value=self.value)
+            self.__class__.__name__, value=self.value)
 
 
 class PrologInteger(PrologNumber):
@@ -270,25 +284,33 @@ class PrologVariable(PrologNonCompoundTerm):
         super().__init__(name=name)
 
 
-class PrologCompoundTerm(ParsedPrologTerm):
+class PrologBaseCompoundTerm(ParsedPrologTerm):
+    """Any term with arguments.
+
+    Not necessarily an actual Prolog compound term.
+    """
     _comma_operator_precedence = PrologOperators[','][2].precedence
 
+    def _comma_separated_args_str(self):
+        """Return args as a comma-separated string."""
+        return ', '.join(
+            arg.str_precedence_less_equal(self._comma_operator_precedence - 1)
+            for arg in self.args)
+
+
+class PrologCompoundTerm(PrologBaseCompoundTerm):
     def __init__(self, name, args):
         super().__init__(name=name, args=args)
         self.arity = len(args)
 
     def __str__(self):
-        args_string = ', '.join(
-            arg.str_precedence_less_equal(self._comma_operator_precedence - 1)
-            for arg in self.args)
-
-        if self.name == '[]':
-            return '[{}]'.format(args_string)
-        elif self.name == '[|]':
-            assert(len(self.args) == 2)
+        if self.name == '[|]':
+            assert self.arity == 2
             return '[{!s} | {!s}]'.format(self.args[0], self.args[1])
         else:
-            return '{name!s}({args!s})'.format(name=self.name, args=args_string)
+            return '{name!s}({args!s})'.format(
+                name=self.name,
+                args=self._comma_separated_args_str())
 
 
 class PrologOperatorTerm(PrologCompoundTerm):
@@ -318,17 +340,19 @@ class PrologOperatorTerm(PrologCompoundTerm):
         raise AssertionError('Unexpected operator character: {}'.format(char))
 
 
-class PrologList(PrologCompoundTerm):
-    """Provide a Sequence interface to a list prolog term."""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if not self.is_parsed:
-            raise ValueError('Unparsed term: {!s}'.format(self))
-        if self.name == '[|]':
-            raise ValueError('Recursive type lists not supported.')
-        if self.name != '[]':
-            raise ValueError(
-                'Term of type "{!s}" is not a list.'.format(self.name))
+class PrologList(PrologBaseCompoundTerm):
+    """A PrologTerm representing a list."""
+    def __init__(self, iterable=None):
+        if iterable is None:
+            iterable = []
+        super().__init__(name='[]', args=list(iterable))
+
+    def __str__(self):
+        return '[{}]'.format(self._comma_separated_args_str())
+
+    def __repr__(self):
+        return '{name}({args!r})'.format(
+            name=PrologList.__name__, args=self.args)
 
     def __len__(self):
         return len(self.args)
