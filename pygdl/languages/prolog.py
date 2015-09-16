@@ -7,6 +7,7 @@ import string
 import pyswip
 
 from pygdl.paths import prolog_dir
+from pygdl.utils.comparison import TypedEqualityMixin
 
 _introspection_prolog_file = os.path.join(prolog_dir, 'introspection.pl')
 _prolog_session = pyswip.Prolog()
@@ -33,7 +34,7 @@ def _get_prolog_operators():
 PrologOperators = _get_prolog_operators()
 
 
-class PrologTerm(object):
+class PrologTerm(TypedEqualityMixin):
     """Representation of a Prolog term."""
     @staticmethod
     def make_from_basic_type(term):
@@ -88,7 +89,7 @@ class PrologTerm(object):
     def and_(*terms):
         """Return a PrologTerm that is true if all terms are true."""
         if not terms:
-            return PrologTerm(name='true')
+            return PrologAtom(name='true')
 
         terms = list(terms)
         combined_term = terms.pop()
@@ -112,8 +113,8 @@ class UnparsedPrologTerm(PrologTerm):
         self.str = str(term)
 
     def __repr__(self):
-        return '{}({})'.format(UnparsedPrologTerm.__name__,
-                               self.str)
+        return '{}({!r})'.format(UnparsedPrologTerm.__name__,
+                                 self.str)
 
     def __str__(self):
         return self.str
@@ -167,9 +168,6 @@ class UnparsedPrologTerm(PrologTerm):
             if isinstance(var, pyswip.Variable) and name not in parse_variables}
 
         term_type = str(assignment[term_type_var])
-        if term_type == 'var':
-            raise AssertionError('Cannot handle variables yet.')
-
         term_name = str(assignment[term_name_var])
         if term_type == 'compound':
             return PrologTerm.make_compound_term(
@@ -177,14 +175,17 @@ class UnparsedPrologTerm(PrologTerm):
                 args=tuple(PrologTerm.make_from_pyswip_term(arg, variable_map)
                            for arg in
                            assignment[term_arguments_var]))
-        if term_type == 'atom':
+        elif term_type == 'atom':
             return PrologAtom(term_name)
-        elif term_type == 'int':
+        elif term_type == 'var':
+            return PrologVariable(self.str)
+        elif term_type == 'integer':
             return PrologInteger(term_name)
         elif term_type == 'float':
             return PrologFloat(term_name)
         elif term_type == 'string':
-            raise AssertionError('Cannot handle strings yet.')
+            print(term_name)
+            return PrologString(term_name)
         else:
             raise AssertionError('Unexpected term type: {}'.format(term_type))
 
@@ -192,9 +193,12 @@ class UnparsedPrologTerm(PrologTerm):
 class ParsedPrologTerm(PrologTerm):
     def __init__(self, name, args):
         self.name = name
-        self.args = [arg if isinstance(arg, PrologTerm)
-                     else PrologTerm.make_from_basic_type(arg)
-                     for arg in args]
+        if args is None:
+            self.args = None
+        else:
+            self.args = [arg if isinstance(arg, PrologTerm)
+                         else PrologTerm.make_from_basic_type(arg)
+                         for arg in args]
         self.precedence = 0
 
     def str_precedence_less_equal(self, precedence):
@@ -233,8 +237,10 @@ class PrologAtom(PrologConstant):
 
     def __init__(self, name):
         super().__init__(name=name)
-        if ((self.name[0] in self.word_atom_first_chars and
-             all(c in self.word_atom_rest_chars for c in self.name[1:]))):
+        if not self.name:
+            self.atom_type = 'quoted'
+        elif (self.name[0] in self.word_atom_first_chars and
+              all(c in self.word_atom_rest_chars for c in self.name[1:])):
             self.atom_type = 'word'
         elif all(c in self.symbol_atom_chars for c in self.name):
             self.atom_type = 'symbol'
@@ -278,10 +284,23 @@ class PrologFloat(PrologNumber):
 
 class PrologVariable(PrologNonCompoundTerm):
     def __init__(self, name):
-        assert name[0].isupper() or name[0] == '_', \
-            'Variable "{}" does not start with an upper case letter.'.format(
-                name)
+        if not name or not (name[0].isupper() or name[0] == '_'):
+            raise ValueError(('Variable "{}" does not start with an ' +
+                              'upper case letter.').format(name))
+        if not all(char.isalnum() or char == '_' for char in name):
+            raise ValueError(('Variable "{}" does not contain only '
+                              'letters, numbers, and underscores').format(name))
         super().__init__(name=name)
+
+
+class PrologString(PrologNonCompoundTerm):
+    escape_map = str.maketrans({
+        '"': '\\"',
+        '\\': '\\\\'
+    })
+
+    def __str__(self):
+        return '"{!s}"'.format(self.name.translate(self.escape_map))
 
 
 class PrologBaseCompoundTerm(ParsedPrologTerm):
@@ -300,11 +319,11 @@ class PrologBaseCompoundTerm(ParsedPrologTerm):
 
 class PrologCompoundTerm(PrologBaseCompoundTerm):
     def __init__(self, name, args):
-        super().__init__(name=name, args=args)
+        super().__init__(name=PrologAtom(name), args=args)
         self.arity = len(args)
 
     def __str__(self):
-        if self.name == '[|]':
+        if self.name.name == '[|]':
             assert self.arity == 2
             return '[{!s} | {!s}]'.format(self.args[0], self.args[1])
         else:
@@ -317,20 +336,20 @@ class PrologOperatorTerm(PrologCompoundTerm):
     def __init__(self, name, args, operator_spec=None):
         super().__init__(name=name, args=args)
         if operator_spec is None:
-            self.operator_spec = PrologOperators[name][self.arity]
+            self.operator_spec = PrologOperators[self.name.name][self.arity]
         else:
             self.operator_spec = operator_spec
         self.precedence = self.operator_spec.precedence
 
     def __str__(self):
         args_iterator = iter(self.args)
-        return ''.join(
+        return ' '.join(
             self._format_operator_character(char, args_iterator)
             for char in self.operator_spec.type)
 
     def _format_operator_character(self, char, args_iterator):
         if char == 'f':
-            return str(self.name)
+            return str(self.name.name)
         if char == 'x':
             return next(args_iterator).str_precedence_less_equal(
                 self.precedence - 1)
