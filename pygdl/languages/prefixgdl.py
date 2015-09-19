@@ -31,6 +31,9 @@ class PrefixGdlAtomicTerm(PrefixGdlTerm):
 
 class PrefixGdlAtom(PrefixGdlAtomicTerm):
     def __init__(self, name):
+        if name[0] == '?':
+            raise ValueError('{cls} name cannot begin with ?'.format(
+                cls=PrefixGdlAtom.__name__))
         self.name = name
 
     def __str__(self):
