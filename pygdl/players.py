@@ -71,8 +71,8 @@ class PrologGamePlayer(object):
         assert(len(self.roles) == len(new_moves))
 
         self.logger.debug("GAME DESCRIPTION FOR TURN %s",
-                          self.game_state.get_turn())
-        for base in self.game_state.get_state_terms():
+                          self.game_state.turn_number())
+        for base in self.game.base_terms():
             self.logger.debug("\t%s", str(base))
 
         moves = {role: move
@@ -83,7 +83,7 @@ class PrologGamePlayer(object):
     def stop(self):
         self.logger.info('Stopping game. Terminal: {!s}. Score: {!s}'.format(
             self.game_state.is_terminal(),
-            self.game_state.get_utility(self.role)))
+            self.game_state.utility(self.role)))
 
     def abort(self):
         self.logger.info('Aborting game.')
@@ -92,7 +92,7 @@ class PrologGamePlayer(object):
 class Legal(PrologGamePlayer):
     """Plays the first legal move."""
     def get_move(self):
-        moves = self.game_state.get_legal_moves(self.role)
+        moves = self.game_state.legal_moves(self.role)
         first_move = next(moves)
         moves.close()
         return first_move
@@ -102,7 +102,7 @@ class Random(PrologGamePlayer):
     """Plays a random legal move."""
     def get_move(self):
         random_move = None
-        for i, move in enumerate(self.game_state.get_legal_moves(self.role)):
+        for i, move in enumerate(self.game_state.legal_moves(self.role)):
             if random.randint(0, i) == 0:
                 random_move = move
 
@@ -112,22 +112,29 @@ class Random(PrologGamePlayer):
 class SimpleDepthFirstSearch(PrologGamePlayer):
     def __init__(self, game_state, role, start_clock, play_clock):
         super().__init__(game_state, role, start_clock, play_clock)
-        assert self.game_state.get_num_roles() == 1, \
-            "CompulsiveDeliberation player only works for single-player games."
+        assert self.game_state.num_roles() == 1, \
+            "SimpleDepthFirstSearch only works for single-player games."
+
+    def get_best_move_sequence(self):
+        _, move_sequence = self.get_best_score_and_move_sequence()
+        return move_sequence
 
     def get_best_score_and_move_sequence(self):
-        if self.game_state.is_terminal():
-            return self.game_state.get_utility(self.role), tuple()
+        return self._get_best_score_and_move_sequence(
+            game_state=self.game_state)
 
-        moves = tuple(self.game_state.get_legal_moves(self.role))
+    def _get_best_score_and_move_sequence(self, game_state):
+        if game_state.is_terminal():
+            return game_state.utility(self.role), tuple()
+
+        moves = tuple(game_state.legal_moves(self.role))
 
         best_score = self.MIN_SCORE - 1
         best_move_sequence = tuple()
+
         for move in moves:
-            self.game_state.set_move(self.role, move)
-            self.game_state.next_turn()
-            score, move_sequence = self.get_best_score_and_move_sequence()
-            self.game_state.previous_turn()
+            score, move_sequence = self.get_best_score_and_move_sequence(
+                game_state=game_state.apply_moves((move)))
 
             assert score >= self.MIN_SCORE
             assert score <= self.MAX_SCORE
@@ -145,7 +152,7 @@ class SimpleDepthFirstSearch(PrologGamePlayer):
 class CompulsiveDeliberation(SimpleDepthFirstSearch):
     """For each move, find optimal move with DFS."""
     def get_move(self):
-        _, move_sequence = self.get_best_score_and_move_sequence()
+        move_sequence = self.get_best_move_sequence()
         return move_sequence[0]
 
 
@@ -153,12 +160,11 @@ class SequentialPlanner(SimpleDepthFirstSearch):
     """On init, find optimal move sequence with DFS. Save and replay it."""
     def __init__(self, game_state, role, start_clock, play_clock):
         super().__init__(game_state, role, start_clock, play_clock)
-        _, move_sequence = self.get_best_score_and_move_sequence()
+        move_sequence = self.get_best_move_sequence()
         self.move_sequence = list(move_sequence)
 
     def get_move(self):
-        move = self.move_sequence[0]
-        self.move_sequence.pop(0)
+        move = self.move_sequence.pop(0)
         return move
 
 
@@ -166,7 +172,7 @@ class SearchPlayer(PrologGamePlayer):
     def __init__(self, game_state, role, start_clock, play_clock):
         super().__init__(game_state, role, start_clock, play_clock)
         self.players = tuple(str(role_)
-                             for role_ in self.game_state.get_roles())
+                             for role_ in self.game.roles())
         self.own_player_index = self.players.index(self.role)
 
     def succesor_player_index(self, player_index):
@@ -182,6 +188,7 @@ class SearchPlayer(PrologGamePlayer):
         """
         self.logger.debug("Search %s %s", depth, player_index)
         is_own_turn = player_index == self.own_player_index
+        # TODO: Requires re-write
 
         if is_own_turn and depth > 0:
             mustUndoTurn = True
@@ -195,7 +202,7 @@ class SearchPlayer(PrologGamePlayer):
         try:
             current_role = self.players[player_index]
             is_terminal = self.game_state.is_terminal()
-            moves = tuple(self.game_state.get_legal_moves(current_role))
+            moves = tuple(self.game_state.legal_moves(current_role))
             return self.search_for_move(depth=depth,
                                         player_index=player_index,
                                         current_role=current_role,
@@ -459,5 +466,5 @@ class BoundedDepth(AlphaBeta):
         return self.game_state.get_utility(self.role)
 
     def heuristic_mobility(self):
-        return (float(len(set(self.game_state.get_legal_moves(self.role)))) /
+        return (float(len(set(self.game_state.legal_moves(self.role)))) /
                 self.num_possible_moves[str(self.role)])

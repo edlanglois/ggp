@@ -51,6 +51,23 @@ class BaseTestPrefixGdlToProlog():
                    PrologAtom('a'),
                    PrologTerm.and_(PrologAtom('b'), PrologAtom('c')))))
 
+    def check_translate_to_single_term(self, prefix_gdl, expected_term):
+        assert_equal(self.translator.translate_to_single_term(prefix_gdl),
+                     expected_term)
+
+    def check_translate_to_single_term_fails(self, prefix_gdl):
+        with assert_raises(ValueError):
+            self.translator.translate_to_single_term(prefix_gdl)
+
+    def test_translate_to_single_term_common(self):
+        yield self.check_translate_to_single_term, 'abc', PrologAtom('abc')
+        yield (self.check_translate_to_single_term, '(foo)',
+               PrologCompoundTerm('foo', args=()))
+        yield (self.check_translate, '(foo bar)',
+               PrologCompoundTerm('foo', args=(PrologAtom('bar'),)))
+        yield self.check_translate_to_single_term_fails, ''
+        yield self.check_translate_to_single_term_fails, 'abc def'
+
 
 class TestPrefixGdlToPrologBijective(BaseTestPrefixGdlToProlog):
     def setUp(self):

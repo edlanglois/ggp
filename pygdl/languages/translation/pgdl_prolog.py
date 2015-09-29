@@ -130,6 +130,25 @@ class PrefixGdlToProlog(object):
         return self.translate_statements(
             self._prefix_gdl_parser.parse(instring))
 
+
+    def translate_to_single_term(self, instring):
+        """Translate a prefix gdl string to a single PrologTerm.
+
+        Raises a ValueError exception if instring does not correspond to a
+        single prolog term.
+        """
+        terms = iter(self.translate(instring))
+        try:
+            term = next(terms)
+            try:
+                term = next(terms)
+                raise ValueError('Input corresponds to > 1 Prolog term.')
+            except StopIteration:
+                pass
+        except StopIteration:
+            raise ValueError('Input corresponds to no Prolog terms.')
+        return term
+
     def translate_statements(self, statements):
         """Translate a PrefixGdlStatements object to a list of PrologTerm."""
         self._check_type(statements, prefixgdl.PrefixGdlStatements)

@@ -37,7 +37,7 @@ PrologOperators = _get_prolog_operators()
 class PrologTerm(TypedEqualityMixin):
     """Representation of a Prolog term."""
     @staticmethod
-    def make_from_basic_type(term):
+    def make(term):
         if isinstance(term, str):
             return UnparsedPrologTerm(term)
         elif isinstance(term, int):
@@ -45,7 +45,7 @@ class PrologTerm(TypedEqualityMixin):
         elif isinstance(term, float):
             return PrologFloat(term)
         else:
-            raise AssertionError('Unexpected type: {}'.format(type(term)))
+            return PrologTerm.make_from_pyswip_term(term)
 
     @staticmethod
     def make_from_pyswip_term(pyswip_term, variable_map={}):
@@ -68,6 +68,8 @@ class PrologTerm(TypedEqualityMixin):
                            for arg in pyswip_term.args))
         elif isinstance(pyswip_term, list):
             return PrologList(pyswip_term)
+        elif isinstance(pyswip_term, int):
+            return PrologInteger(pyswip_term)
         else:
             raise AssertionError(
                 'Unexpected type: {}'.format(type(pyswip_term)))
@@ -197,7 +199,7 @@ class ParsedPrologTerm(PrologTerm):
             self.args = None
         else:
             self.args = [arg if isinstance(arg, PrologTerm)
-                         else PrologTerm.make_from_basic_type(arg)
+                         else PrologTerm.make(arg)
                          for arg in args]
         self.precedence = 0
 
@@ -226,7 +228,9 @@ class PrologNonCompoundTerm(ParsedPrologTerm):
 
 
 class PrologConstant(PrologNonCompoundTerm):
-    pass
+    def __hash__(self):
+        assert self.args is None
+        return hash(type(self)) ^ hash(self.name)
 
 
 class PrologAtom(PrologConstant):
@@ -364,7 +368,9 @@ class PrologList(PrologBaseCompoundTerm):
     def __init__(self, iterable=None):
         if iterable is None:
             iterable = []
+
         super().__init__(name='[]', args=list(iterable))
+
 
     def __str__(self):
         return '[{}]'.format(self._comma_separated_args_str())

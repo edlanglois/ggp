@@ -281,6 +281,7 @@ def test_prolog_operator_term():
     yield check_operator_format_on_atoms, ':-', 1, ':- a'
     yield check_operator_format_on_atoms, '$', 1, r'$ a'
     yield check_operator_format_on_atoms, 'volatile', 1, 'volatile a'
+    yield check_operator_format_on_atoms, '=', 2, 'a = b'
 
 
 def test_prolog_operator_format_on_unparsed():
@@ -351,8 +352,12 @@ def test_unparsed_prolog_term():
     yield check_unparsed_prolog_term, 'X'
 
 
-def check_unparsed_prolog_term_parse(string, parsed):
-    assert_equal(UnparsedPrologTerm(string).parse(), parsed)
+def check_unparsed_prolog_term_parse(string, *parsed):
+    parsed_term = UnparsedPrologTerm(string).parse()
+    if len(parsed) == 1:
+        assert_equal(parsed_term, parsed[0])
+    else:
+        assert_in(parsed_term, parsed)
 
 
 def test_unparsed_prolog_term_parse():
@@ -373,6 +378,33 @@ def test_unparsed_prolog_term_parse():
     yield check_unparsed_prolog_term_parse, '"abc"', PrologString('abc')
     yield check_unparsed_prolog_term_parse, r'"a\"c"', PrologString('a"c')
     yield check_unparsed_prolog_term_parse, r'"a\\c"', PrologString('a\\c')
+    yield (check_unparsed_prolog_term_parse, '[1, 1.2, a]',
+           PrologList([PrologInteger(1), PrologFloat(1.2), PrologAtom('a')]),
+           PrologCompoundTerm('[|]', args=(
+               PrologInteger(1),
+               PrologList([PrologFloat(1.2), PrologAtom('a')]))),
+           PrologCompoundTerm('[|]', args=(
+               PrologInteger(1),
+               PrologCompoundTerm('[|]', args=(
+                   PrologFloat(1.2),
+                   PrologAtom('a'))))))
+
+
+def check_prolog_term_make(term, prolog_term):
+    assert_equal(PrologTerm.make(term), prolog_term)
+
+
+def test_prolog_term_make():
+    yield check_prolog_term_make, 'abc', UnparsedPrologTerm('abc')
+    yield check_prolog_term_make, 'Abc', UnparsedPrologTerm('Abc')
+    yield check_prolog_term_make, '_', UnparsedPrologTerm('_')
+    yield check_prolog_term_make, '1', UnparsedPrologTerm('1')
+    yield check_prolog_term_make, '1.2', UnparsedPrologTerm('1.2')
+    yield check_prolog_term_make, 1, PrologInteger(1)
+    yield check_prolog_term_make, 1.2, PrologFloat(1.2)
+    yield (check_prolog_term_make, [1, 1.2, 'a'],
+           PrologList([PrologInteger(1), PrologFloat(1.2),
+                       UnparsedPrologTerm('a')]))
 
 
 def check_prolog_term_make_compound_term(name, *args):

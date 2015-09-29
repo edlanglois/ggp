@@ -5,9 +5,10 @@ import logging
 from pygdl.languages.prolog import PrologTerm, UnparsedPrologTerm
 from pygdl.languages.sexpressions import s_expression_parser, SExpression
 from pygdl.languages.translation.pgdl_prolog import (
-    translate_prefix_gdl_to_prolog_terms,
-    translate_prolog_term_to_prefix_gdl,
+    PrefixGdlToProlog,
+    PrologToPrefixGdl,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,8 @@ class SerialGeneralGamePlayingMessageHandler(object):
         self.game_manager = game_manager
         self.player_factory = player_factory
         self.game_players = dict()
+        self.prefix_gdl_to_prolog = PrefixGdlToProlog(bijective=True)
+        self.prolog_to_prefix_gdl = PrologToPrefixGdl(bijective=True)
 
     def handle_message(self, message):
         message = ' '.join(message)
@@ -127,7 +130,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
 
         self.game_manager.create_game(
             game_id,
-            translate_prefix_gdl_to_prolog_terms(
+            self.prefix_gdl_to_prolog.translate(
                 '\n'.join(str(expr) for expr in game_description)))
 
         player = self.player_factory(
@@ -149,11 +152,10 @@ class SerialGeneralGamePlayingMessageHandler(object):
         logger.debug("Game ID: " + game_id)
         logger.debug("New moves: " + str(new_moves))
 
-        player = self.get_game(game_id).player
+        player = self.game_players[game_id]
 
         if new_moves != 'nil':
-            player.update_moves(
-                translate_prefix_gdl_to_prolog_terms(str(new_moves)))
+            player.update_moves(self._translate_new_moves_to_prolog(new_moves))
 
         move = player.get_move()
         logger.info("Selected move: " + str(move))
@@ -161,7 +163,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
             move = UnparsedPrologTerm(str(move))
         if isinstance(move, UnparsedPrologTerm):
             move = move.parse()
-        return translate_prolog_term_to_prefix_gdl(move)
+        return self.prolog_to_prefix_gdl.translate_parsed_prolog_term(move)
 
     def do_stop(self, args):
         logger.info("Received stop message.")
@@ -173,10 +175,10 @@ class SerialGeneralGamePlayingMessageHandler(object):
         logger.debug("Game ID: " + game_id)
         logger.debug("New moves: " + str(new_moves))
 
-        player = self.get_game(game_id).player
+        player = self.game_players[game_id]
 
         if new_moves != 'nil':
-            player.update_moves(new_moves)
+            player.update_moves(self._translate_new_moves_to_prolog(new_moves))
 
         player.stop()
         return 'done'
@@ -189,10 +191,14 @@ class SerialGeneralGamePlayingMessageHandler(object):
         game_id = args[0]
         logger.debug("Game ID: " + game_id)
 
-        player = self.get_game(game_id).player
+        player = self.game_players[game_id]
         player.abort()
 
         return 'done'
+
+    def _translate_new_moves_to_prolog(self, new_moves):
+        return [self.prefix_gdl_to_prolog.translate_to_single_term(str(move))
+                for move in new_moves]
 
 
 def make_general_game_playing_request_handler(message_handler):

@@ -6,7 +6,9 @@ from pygdl.languages.prolog import (
     PrologAtom,
     PrologCompoundTerm,
     PrologList,
+    PrologOperatorTerm,
     PrologTerm,
+    PrologVariable as PVar,
 )
 from pygdl.paths import prolog_dir
 
@@ -91,7 +93,7 @@ class GeneralGame(object):
                 for assignment
                 in self._prolog().query(
                     self.stateless_query_term(
-                        PrologCompoundTerm(name='input', args=(role, 'Move')))))
+                        'input({role!s}, Move)'.format(role=role))))
 
     def base_terms(self):
         """A list of the terms which define the game state."""
@@ -100,7 +102,7 @@ class GeneralGame(object):
                     self.stateless_query_term('base(X)')))
 
     def stateless_query_term(self, *queries):
-        return self.stateful_query_term(PrologAtom('none'), *queries)
+        return self.stateful_query_term('none', *queries)
 
     def stateful_query_term(self, state, *queries):
         return self.game_manager.game_state_query_term(
@@ -125,13 +127,11 @@ class GeneralGameState(object):
 
         if truth_history is None:
             assert truth_state is None
-            assignment = self._prolog().query_first(
-                PrologTerm.and_(
-                    PrologCompoundTerm(
-                        name='truth_history',
-                        args=(self.game_id(), self.move_history,
-                              'TruthHistory')),
-                    'final_truth_state(TruthHistory, TruthState)'))
+            assignment = self._prolog().query_first((
+                'truth_history({game_id!s}, {move_history!s}, TruthHistory), '
+                'final_truth_state(TruthHistory, TruthState)').format(
+                    game_id=self.game_id(),
+                    move_history=self.move_history))
 
             self.truth_history = assignment['TruthHistory']
             self.truth_state = assignment['TruthState']
@@ -140,9 +140,8 @@ class GeneralGameState(object):
 
             if truth_state is None:
                 assignment = self._prolog().query_first(
-                    PrologCompoundTerm(
-                        name='final_truth_state',
-                        args=(self.truth_history, 'TruthState')))
+                    'final_truth_state({truth_history!s}, TruthState)'.format(
+                        truth_history=self.truth_history))
                 self.truth_state = assignment['TruthState']
             else:
                 self.truth_state = truth_state
@@ -154,17 +153,16 @@ class GeneralGameState(object):
     def utility(self, role):
         """The utility of the current state for the given role."""
         return int(self._prolog().query_first(
-            self.query_term(PrologCompoundTerm(
-                name='goal',
-                args=(role, 'Utility'))))['Utility'])
+            self.query_term('goal({role!s}, Utility)'.format(
+                role=role)))['Utility'].name)
 
     def legal_moves(self, role):
         """An iterator of legal moves for role in the current state."""
         return (assignment['Move']
                 for assignment
                 in self._prolog().query(
-                    self.query_term(
-                        PrologCompoundTerm(name='legal', args=(role, 'Move')))))
+                    self.query_term('legal({role!s}, Move)'.format(role=role))
+                ))
 
     def state_terms(self):
         """Iterator of the base terms that are true for this state."""
@@ -177,7 +175,7 @@ class GeneralGameState(object):
         """True if the current game state is terminal."""
         return self._prolog().query_satisfied(self.query_term('terminal'))
 
-    def apply_move(self, moves):
+    def apply_moves(self, moves):
         """A new game state representing the game after moves are applied.
 
         Returns a new state, this state is unchanged.
@@ -186,26 +184,18 @@ class GeneralGameState(object):
         moves_term = PrologList(tuple(
             PrologCompoundTerm(name='does', args=(role, action))
             for (role, action) in moves.items()))
-        print("Moves Term:", str(moves_term))
-        print("Old Move History:", str(self.move_history))
 
-        assignment = self._prolog().query_first(
-            PrologTerm.and_(
-                PrologCompoundTerm(
-                    name='prepare_moves',
-                    args=(self.game_id(), moves_term, 'PreparedMoves')),
-                PrologCompoundTerm(
-                    name='=',
-                    args=('MoveHistory',
-                          PrologCompoundTerm(
-                              name='[|]',
-                              args=('PreparedMoves', self.move_history)))),
-                PrologCompoundTerm(
-                    name='truth_history',
-                    args=(self.game_id(), 'MoveHistory',
-                          self.truth_history, 'TruthHistory')),
-                'final_truth_state(TruthHistory, TruthState)',
-            ))
+        assignment = self._prolog().query_first((
+            'prepare_moves({game_id!s}, {moves_term!s}, PreparedMoves),'
+            'MoveHistory = [PreparedMoves | {old_move_history!s}],'
+            'truth_history({game_id!s}, MoveHistory, {old_truth_history!s},'
+            '              TruthHistory),'
+            'final_truth_state(TruthHistory, TruthState)').format(
+                game_id=self.game_id(),
+                moves_term=moves_term,
+                old_move_history=self.move_history,
+                old_truth_history=self.truth_history))
+
         return GeneralGameState(
             game=self.game,
             move_history=assignment['MoveHistory'],
