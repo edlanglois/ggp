@@ -83,11 +83,6 @@ class SerialGeneralGamePlayingMessageHandler(object):
         except self.UnknownGameIDError as e:
             logger.warning("Received message for unknown game id '%s'", e.id)
             raise ForbiddenMessageError("Unknown game id {}".format(e.id)) from e
-        except:
-            import pdb, traceback, sys
-            type_, value, tb = sys.exc_info()
-            traceback.print_exc()
-            pdb.post_mortem(tb)
 
     def get_game_player(self, game_id):
         """Return the player associated with id"""
@@ -210,8 +205,12 @@ def make_general_game_playing_request_handler(message_handler):
         def log_message(self, format_, *args):
             logger.debug("Sent: " + format_, *args)
 
-        def do_POST(self):
-            content_length = int(self.headers['content-length'])
+        def post_response(self):
+            try:
+                content_length = int(self.headers['content-length'])
+            except KeyError:
+                return 411, None  # 411 Length Required
+
             message_bytes = self.rfile.read(content_length)
             message = message_bytes.decode()
             logger.debug("Received message: %r",
@@ -219,16 +218,22 @@ def make_general_game_playing_request_handler(message_handler):
                          else message[:self.MAX_LOG_MESSAGE_LEN - 3] + '...')
             message_lines = message.splitlines()
 
-            response = None
             try:
-                response = message_handler.handle_message(message_lines)
-                response_code = 200
+                # 200 OK
+                return 200, message_handler.handle_message(message_lines)
             except MalformedMessageError as e:
                 logger.warn("Error processing message. Reason: " + str(e))
-                response_code = 400
+                return 400, None  # 400 Bad Request
             except ForbiddenMessageError as e:
                 logger.info("Refusing to process message. Reason: " + str(e))
-                response_code = 403
+                return 403, None
+                response_code = 403  # 403 Forbidden
+            except Exception as e:
+                logger.error(e, exc_info=True)
+                return 500, None #  500 Internal Server Error
+
+        def do_POST(self):
+            response_code, response = self.post_response()
 
             if response is None:
                 response_str = ''
