@@ -26,11 +26,11 @@ class ForbiddenMessageError(MessageError):
     pass
 
 
-class BadMessageError(MessageError):
+class MalformedMessageError(MessageError):
     pass
 
 
-class ArgumentError(BadMessageError):
+class ArgumentError(MalformedMessageError):
     pass
 
 
@@ -82,6 +82,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
             return handler(message_s_expression[1:])
         except self.UnknownGameIDError as e:
             logger.warning("Received message for unknown game id '%s'", e.id)
+            raise ForbiddenMessageError("Unknown game id {}".format(e.id)) from e
         except:
             import pdb, traceback, sys
             type_, value, tb = sys.exc_info()
@@ -152,7 +153,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
         logger.debug("Game ID: " + game_id)
         logger.debug("New moves: " + str(new_moves))
 
-        player = self.game_players[game_id]
+        player = self.get_game_player(game_id)
 
         if new_moves != 'nil':
             player.update_moves(self._translate_new_moves_to_prolog(new_moves))
@@ -175,12 +176,13 @@ class SerialGeneralGamePlayingMessageHandler(object):
         logger.debug("Game ID: " + game_id)
         logger.debug("New moves: " + str(new_moves))
 
-        player = self.game_players[game_id]
+        player = self.get_game_player(game_id)
 
         if new_moves != 'nil':
             player.update_moves(self._translate_new_moves_to_prolog(new_moves))
 
         player.stop()
+        del self.game_players[game_id]
         return 'done'
 
     def do_abort(self, args):
@@ -191,9 +193,9 @@ class SerialGeneralGamePlayingMessageHandler(object):
         game_id = args[0]
         logger.debug("Game ID: " + game_id)
 
-        player = self.game_players[game_id]
+        player = self.get_game_player(game_id)
         player.abort()
-
+        del self.game_players[game_id]
         return 'done'
 
     def _translate_new_moves_to_prolog(self, new_moves):
@@ -221,7 +223,7 @@ def make_general_game_playing_request_handler(message_handler):
             try:
                 response = message_handler.handle_message(message_lines)
                 response_code = 200
-            except BadMessageError as e:
+            except MalformedMessageError as e:
                 logger.warn("Error processing message. Reason: " + str(e))
                 response_code = 400
             except ForbiddenMessageError as e:
