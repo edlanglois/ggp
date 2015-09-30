@@ -110,9 +110,9 @@ class Random(PrologGamePlayer):
 
 
 class SimpleDepthFirstSearch(PrologGamePlayer):
-    def __init__(self, game_state, role, start_clock, play_clock):
-        super().__init__(game_state, role, start_clock, play_clock)
-        assert self.game_state.num_roles() == 1, \
+    def __init__(self, game, role, start_clock, play_clock):
+        super().__init__(game, role, start_clock, play_clock)
+        assert self.game.num_roles() == 1, \
             "SimpleDepthFirstSearch only works for single-player games."
 
     def get_best_move_sequence(self):
@@ -133,8 +133,8 @@ class SimpleDepthFirstSearch(PrologGamePlayer):
         best_move_sequence = tuple()
 
         for move in moves:
-            score, move_sequence = self.get_best_score_and_move_sequence(
-                game_state=game_state.apply_moves((move)))
+            score, move_sequence = self._get_best_score_and_move_sequence(
+                game_state=game_state.apply_moves({self.role: move}))
 
             assert score >= self.MIN_SCORE
             assert score <= self.MAX_SCORE
@@ -158,8 +158,8 @@ class CompulsiveDeliberation(SimpleDepthFirstSearch):
 
 class SequentialPlanner(SimpleDepthFirstSearch):
     """On init, find optimal move sequence with DFS. Save and replay it."""
-    def __init__(self, game_state, role, start_clock, play_clock):
-        super().__init__(game_state, role, start_clock, play_clock)
+    def __init__(self, game, role, start_clock, play_clock):
+        super().__init__(game, role, start_clock, play_clock)
         move_sequence = self.get_best_move_sequence()
         self.move_sequence = list(move_sequence)
 
@@ -169,8 +169,8 @@ class SequentialPlanner(SimpleDepthFirstSearch):
 
 
 class SearchPlayer(PrologGamePlayer):
-    def __init__(self, game_state, role, start_clock, play_clock):
-        super().__init__(game_state, role, start_clock, play_clock)
+    def __init__(self, game, role, start_clock, play_clock):
+        super().__init__(game, role, start_clock, play_clock)
         self.players = tuple(str(role_)
                              for role_ in self.game.roles())
         self.own_player_index = self.players.index(self.role)
