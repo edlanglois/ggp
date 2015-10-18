@@ -10,6 +10,7 @@ setup(
     license="MIT",
     packages=["pygdl"],
     install_requires=[
-        "pyswip>=0.2.5"
+        "pyparsing",
+        "pyswip>=0.2.5",
     ],
 )
