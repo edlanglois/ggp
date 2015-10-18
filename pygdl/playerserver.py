@@ -1,4 +1,5 @@
 import datetime
+import errno
 import http.server
 import logging
 
@@ -258,12 +259,32 @@ def make_general_game_playing_request_handler(message_handler):
     return GeneralGamePlayingRequestHandler
 
 
-def run_player_server(game_manager, player_factory, port=9147):
+def run_player_server(game_manager, player_factory, port=9147,
+                      search_for_open_port=False,
+                      port_search_max_tries=100):
     handler = make_general_game_playing_request_handler(
         SerialGeneralGamePlayingMessageHandler(
             game_manager=game_manager,
             player_factory=player_factory))
-    server = http.server.HTTPServer(('', port), handler)
+
+    for attempt_index in range(1,  port_search_max_tries + 1):
+        try:
+            server = http.server.HTTPServer(('', port), handler)
+            break
+        except OSError as e:
+            if e.errno == errno.EADDRINUSE:
+                log_message = 'Port number {} is in use.'.format(port)
+
+                if ((search_for_open_port and
+                     attempt_index < port_search_max_tries)):
+                    logger.info(log_message)
+                    port += 1
+                    continue
+                else:
+                    logger.error(log_message)
+
+            raise
+
     logger.info('Server listening on port {!s}'.format(port))
     try:
         server.serve_forever()
