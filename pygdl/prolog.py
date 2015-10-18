@@ -3,6 +3,11 @@ import pyswip
 
 from pygdl.languages.prolog import PrologTerm
 
+__all__ = [
+    'PrologSession',
+    'QueryEvaluatesFalseError',
+]
+
 
 class QueryEvaluatesFalseError(Exception):
     def __init__(self, query):

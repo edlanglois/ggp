@@ -24,6 +24,7 @@ player_classes = [
     SequentialPlanner,
 ]
 
+
 class LogLevel(object):
     levels = ['debug', 'info', 'warning', 'error', 'critical']
 

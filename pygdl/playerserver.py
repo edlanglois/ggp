@@ -9,6 +9,9 @@ from pygdl.languages.translation.pgdl_prolog import (
     PrologToPrefixGdl,
 )
 
+__all__ = [
+    'run_player_server',
+]
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +85,8 @@ class SerialGeneralGamePlayingMessageHandler(object):
             return handler(message_s_expression[1:])
         except self.UnknownGameIDError as e:
             logger.warning("Received message for unknown game id '%s'", e.id)
-            raise ForbiddenMessageError("Unknown game id {}".format(e.id)) from e
+            error = ForbiddenMessageError("Unknown game id {}".format(e.id))
+            raise error from e
 
     def get_game_player(self, game_id):
         """Return the player associated with id"""
@@ -226,11 +230,10 @@ def make_general_game_playing_request_handler(message_handler):
                 return 400, None  # 400 Bad Request
             except ForbiddenMessageError as e:
                 logger.info("Refusing to process message. Reason: " + str(e))
-                return 403, None
-                response_code = 403  # 403 Forbidden
+                return 403, None  # 403 Forbidden
             except Exception as e:
                 logger.error(e, exc_info=True)
-                return 500, None #  500 Internal Server Error
+                return 500, None  # 500 Internal Server Error
 
         def do_POST(self):
             response_code, response = self.post_response()

@@ -1,6 +1,11 @@
 """Translation between Prefix GDL and Prolog"""
 from pygdl.languages import prefixgdl, prolog
 
+__all__ = [
+    'PrefixGdlToProlog',
+    'PrologToPrefixGdl',
+]
+
 
 class PrologToPrefixGdl(object):
     """Translate Prolog to Prefix GDL"""
@@ -129,7 +134,6 @@ class PrefixGdlToProlog(object):
         """Translate a prefix gdl string to a list of PrologTerm."""
         return self.translate_statements(
             self._prefix_gdl_parser.parse(instring))
-
 
     def translate_to_single_term(self, instring):
         """Translate a prefix gdl string to a single PrologTerm.
