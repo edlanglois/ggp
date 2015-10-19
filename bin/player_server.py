@@ -6,8 +6,6 @@ import logging
 
 from pygdl.players import (
     PlayerFactory,
-    AlphaBeta,
-    BoundedDepth,
     CompulsiveDeliberation,
     Legal,
     Minimax,
@@ -16,8 +14,6 @@ from pygdl.players import (
 )
 player_classes = [
     Legal,
-    AlphaBeta,
-    BoundedDepth,
     CompulsiveDeliberation,
     Minimax,
     Random,
@@ -39,7 +35,8 @@ def main():
     parser = argparse.ArgumentParser(description="General Game Player Server")
     parser.add_argument('-P', '--port', type=int, default=9147,
                         help="Port on which the server listens. (default 9147)")
-    parser.add_argument('--log-level', type=LogLevel, default='info',
+    parser.add_argument('--log', type=LogLevel, default='info',
+                        dest='log_level',
                         help=("Set logging level. "
                               "Either an integer value or one of: "
                               "{} (default '{}')".format(

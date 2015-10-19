@@ -86,7 +86,7 @@ class GeneralGame(object):
         """All possible moves for role in this game.
 
         This does not represent the legal moves in some state.
-        It is an iterator of all mich which may be available to role at some
+        It is an iterator of all moves which may be available to role at some
         time in the game.
         """
         return (assignment['Move']
@@ -100,6 +100,14 @@ class GeneralGame(object):
         return (assignment['X']
                 for assignment in self._prolog().query(
                     self.stateless_query_term('base(X)')))
+
+    def max_utility(self):
+        """Maximum utility achievable by any player."""
+        return 100
+
+    def min_utility(self):
+        """Minimum utility achievable by any player."""
+        return 0
 
     def stateless_query_term(self, *queries):
         return self.stateful_query_term('none', *queries)
@@ -179,7 +187,7 @@ class GeneralGameState(object):
         """A new game state representing the game after moves are applied.
 
         Returns a new state, this state is unchanged.
-        moves is a dictionary of role => move.
+        `moves` is a dictionary of role => move.
         """
         moves_term = PrologList(tuple(
             PrologCompoundTerm(name='does', args=(role, action))
