@@ -11,7 +11,7 @@ from ctypes import (
     c_void_p,
 )
 
-from pyswipl.core import (
+from .core import (
     BUF_DISCARDABLE,
     CVT_WRITE,
     PL_ATOM,
