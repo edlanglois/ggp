@@ -8,19 +8,24 @@ from ctypes import (
     c_int,
     c_int64,
     c_long,
+    c_size_t,
     c_void_p,
 )
 
 from pyswipl.core import (
+    BUF_DISCARDABLE,
     BUF_RING,
     CVT_ALL,
     CVT_WRITE,
     PL_ATOM,
+    PL_BLOB,
     PL_CHARS,
     PL_FLOAT,
     PL_FUNCTOR,
     PL_INTEGER,
     PL_LIST,
+    PL_LIST_PAIR,
+    PL_NIL,
     PL_POINTER,
     PL_STRING,
     PL_TERM,
@@ -35,6 +40,7 @@ from pyswipl.core import (
     PL_get_arg,
     PL_get_atom,
     PL_get_atom_chars,
+    PL_get_atom_nchars,
     PL_get_bool,
     PL_get_chars,
     PL_get_compound_name_arity,
@@ -48,6 +54,7 @@ from pyswipl.core import (
     PL_get_long,
     PL_get_module,
     PL_get_name_arity,
+    PL_get_nchars,
     PL_get_nil,
     PL_get_pointer,
     PL_get_string_chars,
@@ -69,17 +76,21 @@ from pyswipl.core import (
     PL_new_atom,
     PL_new_functor,
     PL_new_term_ref,
+    PL_new_term_refs,
     PL_put_atom,
     PL_put_atom_chars,
+    PL_put_atom_nchars,
     PL_put_bool,
     PL_put_float,
     PL_put_functor,
     PL_put_int64,
     PL_put_integer,
     PL_put_list,
+    PL_put_list_nchars,
     PL_put_nil,
     PL_put_pointer,
     PL_put_string_chars,
+    PL_put_string_nchars,
     PL_put_term,
     PL_put_variable,
     PL_register_atom,
@@ -93,16 +104,19 @@ from pyswipl.core import (
 )
 
 _term_type_code_name = {
-    PL_VARIABLE: 1,
-    PL_ATOM: 2,
-    PL_INTEGER: 3,
-    PL_FLOAT: 4,
-    PL_STRING: 5,
-    PL_TERM: 6,
-    PL_FUNCTOR: 10,
-    PL_LIST: 11,
-    PL_CHARS: 12,
-    PL_POINTER: 13
+    PL_VARIABLE: 'variable',
+    PL_ATOM: 'atom',
+    PL_INTEGER: 'integer',
+    PL_FLOAT: 'float',
+    PL_STRING: 'string',
+    PL_TERM: 'term',
+    PL_NIL: 'nil',
+    PL_BLOB: 'blob',
+    PL_LIST_PAIR: 'list-pair',
+    PL_FUNCTOR: 'functor',
+    PL_LIST: 'list',
+    PL_CHARS: 'chars',
+    PL_POINTER: 'pointer',
 }
 
 
@@ -120,226 +134,477 @@ class HandleWrapper(object):
 
 class Term(HandleWrapper):
     def __init__(self):
+        """Initialize a new term. The term is initially a variable."""
         super(Term, self).__init__(handle=PL_new_term_ref())
 
     def __str__(self):
+        """A Prolog string representing this term."""
         return self.get_chars()
 
     def __deepcopy__(self):
+        """Creates a new Prolog term, copied from the old."""
         return self._from_handle(handle=PL_copy_term_ref(self._handle))
 
     def type(self):
-        """Term type as a string."""
+        """Term type as a string.
+
+        Returns one of the following strings:
+
+            * ``variable``
+            * ``atom``
+            * ``integer``
+            * ``float``
+            * ``string``
+            * ``term``
+            * ``nil``
+            * ``blob``
+            * ``list-pair``
+            * ``functor``
+            * ``list``
+            * ``chars``
+            * ``pointer``
+        """
         type_code = PL_term_type(self._handle)
         return _term_type_code_name[type_code]
 
     def is_acyclic(self):
-        return PL_is_acyclic(self._handle)
+        """True if this is an acyclic term."""
+        return bool(PL_is_acyclic(self._handle))
 
     def is_atom(self):
-        return PL_is_atom(self._handle)
+        """True if this term is an atom."""
+        return bool(PL_is_atom(self._handle))
 
     def is_atomic(self):
-        return PL_is_atomic(self._handle)
+        """True if this term is atomic.
+
+        A term is atomic if it is not variable or compound.
+        """
+        return bool(PL_is_atomic(self._handle))
 
     def is_callable(self):
-        return PL_is_callable(self._handle)
+        """True if this term is callable.
+
+        A term is callable if it is compound or an atom.
+        """
+        return bool(PL_is_callable(self._handle))
 
     def is_compound(self):
-        return PL_is_compound(self._handle)
+        """True if this term is compound.
+
+        A compound term is a functor with arguments.
+        """
+        return bool(PL_is_compound(self._handle))
 
     def is_float(self):
-        return PL_is_float(self._handle)
+        """True if this term is a float."""
+        return bool(PL_is_float(self._handle))
 
-    def is_functor(self):
-        return PL_is_functor(self._handle)
+    def is_functor(self, functor):
+        """True if this term is compound and its functor is `functor`.
+
+        Args:
+            functor (Functor): Check if this is the functor of `self`.
+        """
+        return bool(PL_is_functor(self._handle, functor._handle))
 
     def is_ground(self):
-        return PL_is_ground(self._handle)
+        """True if this term is a ground term.
+
+        A ground term is a term that holds no free variables.
+        """
+        return bool(PL_is_ground(self._handle))
 
     def is_integer(self):
-        return PL_is_integer(self._handle)
+        """True if this term is an integer."""
+        return bool(PL_is_integer(self._handle))
 
     def is_list(self):
-        return PL_is_list(self._handle)
+        """True if this term is a list.
+
+        A term is a list if it is:
+            * a compound term using the list constructor (`is_pair`); or
+            * the list terminator (`is_nil`).
+        """
+        return bool(PL_is_list(self._handle))
+
+    def is_nil(self):
+        """True if this term is the list terminator.
+
+        The list terminator is the constant ``[]``.
+        """
+        self._require_success(
+            PL_get_nil(self._handle))
 
     def is_number(self):
-        return PL_is_number(self._handle)
+        """True if this term is an integer or float."""
+        return bool(PL_is_number(self._handle))
 
     def is_pair(self):
-        return PL_is_pair(self._handle)
+        """True if this term is a compound term using the list constructor."""
+        return bool(PL_is_pair(self._handle))
 
     def is_string(self):
-        return PL_is_string(self._handle)
+        """True if this term is a string."""
+        return bool(PL_is_string(self._handle))
 
     def is_variable(self):
-        return PL_is_variable(self._handle)
+        """True if this term is a variable."""
+        return bool(PL_is_variable(self._handle))
 
     @staticmethod
     def _require_success(return_code):
-        assert return_code
+        assert bool(return_code)
+
+    @staticmethod
+    def _require_success_expecting_type(return_code, *required_types):
+        assert required_types
+        if not bool(return_code):
+            if len(required_types) == 1:
+                type_str = required_types[0]
+            elif len(required_types) == 2:
+                type_str == '{} or {}'.format(*required_types)
+            else:
+                type_str = '{}, or {}'.format(
+                    ', '.join(required_types[:-1],),
+                    required_types[-1])
+
+            raise TypeError('Term is not {a} {type}.'.format(
+                a=('an' if type_str[0].lower() in 'aeiou' else 'a'),
+                type=type_str))
+
+    @staticmethod
+    def _decode_ptr_len_string(ptr, length, encoding='utf8'):
+        """Decode a string from a ctypes pointer and length."""
+        return ptr[:length].decode(encoding)
 
     def get_atom(self):
+        """An `Atom` object representing this term, if it is a prolog atom."""
         a = atom_t()
-        self._require_success(PL_get_atom(self._handle, byref(a)))
+        self._require_success_expecting_type(
+            PL_get_atom(self._handle, byref(a)),
+            'atom')
         return Atom._from_handle(a.value)
 
     def get_atom_chars(self):
+        """The value of this term as a string, if it is a prolog atom."""
         s = c_char_p()
-        self._require_success(PL_get_atom_chars(self._handle, byref(s)))
-        return s.value.decode()
+        length = c_size_t()
+        self._require_success_expecting_type(
+            PL_get_atom_nchars(self._handle, byref(length), byref(s)),
+            'atom')
+        return self._decode_ptr_len_string(s, length)
 
     def get_string_chars(self):
+        """The value of this term as a string, if it is a prolog string."""
         s = POINTER(c_char)()
-        len_ = c_int()
-        self._require_success(PL_get_string_chars(
-            self._handle, byref(s), byref(len_)))
-        return s[:len_].decode()
+        length = c_int()
+        self._require_success_expecting_type(
+            PL_get_string_chars(self._handle, byref(s), byref(length)),
+            'string')
+        return self._decode_ptr_len_string(s, length)
 
     def get_chars(self):
-        s = c_char_p()
+        """Representation of this term as a string in Prolog syntax."""
+        s = POINTER(c_char)()
+        length = c_size_t()
         self._require_success(
-            PL_get_chars(self._handle,
-                         byref(s),
-                         CVT_ALL | CVT_WRITE | BUF_RING | REP_UTF8))
-        return s.value.decode('utf8')
+            PL_get_nchars(self._handle,
+                          byref(length),
+                          byref(s),
+                          CVT_WRITE | BUF_DISCARDABLE | REP_UTF8))
+        return self._decode_ptr_len_string(s, length, encoding='utf8')
 
     def get_integer(self):
-        i = c_int()
-        self._require_success(PL_get_integer(self._handle, byref(i)))
-        return i.value
-
-    def get_long(self):
-        i = c_long()
-        self._require_success(PL_get_long(self._handle, byref(i)))
-        return i.value
-
-    def get_intptr(self):
-        p = c_void_p()
-        self._require_success(PL_get_intptr(self._handle, byref(p)))
-        return p.value
-
-    def get_int64(self):
+        """The value of this term as an integer, if it is an integer or
+        compatible float.
+        """
         i = c_int64()
-        self._require_success(PL_get_int64(self._handle, byref(i)))
+        self._require_success_expecting_type(
+            PL_get_int64(self._handle, byref(i)),
+            'integer', 'int-compatible float')
         return i.value
 
     def get_bool(self):
+        """The value of this term as a boolean, if it is `true` or `false`."""
         i = c_int()
-        self._require_success(PL_get_bool(self._handle, byref(i)))
+        self._require_success_expecting_type(
+            PL_get_bool(self._handle, byref(i)),
+            'boolean')
         return bool(i.value)
 
     def get_pointer(self):
+        """The value of this term as an integer address, if it is a pointer."""
         p = c_void_p()
-        self._require_success(PL_get_pointer(self._handle, byref(p)))
+        self._require_success_expecting_type(
+            PL_get_pointer(self._handle, byref(p)),
+            'pointer')
         return p.value
 
     def get_float(self):
+        """The value of this term as a float, if it is an integer or float."""
         f = c_double()
-        self._require_success(PL_get_float(self._handle, byref(f)))
+        self._require_success_expecting_type(
+            PL_get_float(self._handle, byref(f)),
+            'float', 'integer')
         return f.value
 
     def get_functor(self):
+        """A `Functor` object representing this term, if it is a compound term
+        or atom."""
         functor = functor_t()
-        self._require_success(PL_get_functor(self._handle, byref(functor)))
+        self._require_success_expecting_type(
+            PL_get_functor(self._handle, byref(functor)),
+            'compound term', 'atom')
         return Functor._from_handle(functor.value)
 
     NameArity = namedtuple('NameArity', ['name', 'arity'])
 
     def get_name_arity(self):
+        """The name and arity of this term, if it is a compound term or an atom.
+
+        Compound terms with arity 0 give the same result as an atom.
+        To distingush them use `is_compound` and/or `get_compound_name_arity`.
+
+        Returns:
+            NameArity: namedtuple (name, arity)
+        """
+
         name = atom_t()
         arity = c_int()
-        self._require_success(PL_get_name_arity(
-            self._handle, byref(name), byref(arity)))
+        self._require_success_expecting_type(
+            PL_get_name_arity(self._handle, byref(name), byref(arity)),
+            'compound term', 'atom')
         return self.NameArity(name=name.value, arity=arity.value)
 
     def get_compound_name_arity(self):
+        """The name and arity of this term, if it is a compound term.
+
+        The same as `get_name_arity` but fails for atoms.
+
+        Returns:
+            NameArity: Named tuple of name (`string`) and arity (`int`).
+        """
         name = atom_t()
         arity = c_int()
-        self._require_success(PL_get_compound_name_arity(
-            self._handle, byref(name), byref(arity)))
+        self._require_success_expecting_type(
+            PL_get_compound_name_arity(self._handle, byref(name), byref(arity)),
+            'compound term')
         return self.NameArity(name=name.value, arity=arity.value)
 
     def get_module(self):
+        """A `Module` object corresponding to this term, if it is an atom."""
         module = module_t()
-        self._require_success(PL_get_module(self._handle, byref(module)))
+        self._require_success_expecting_type(
+            PL_get_module(self._handle, byref(module)),
+            'atom')
         return Module._from_handle(module.value)
 
     def get_arg(self, index):
+        """An argument of this term, if this term is compound.
+
+        Args:
+            index (int): Index of the argument.
+                Index is 0-based, unlike in Prolog.
+
+        Returns:
+            Term:
+
+        Raises:
+            AssertionError: If `index` is out of bounds or
+                if this term is not compound.
+        """
         t = term_t()
-        self._require_success(PL_get_arg(index, self._handle, t))
+        self._require_success(
+            PL_get_arg(index + 1, self._handle, t))
         return Term._from_handle(t.value)
 
     HeadTail = namedtuple('HeadTail', ['head', 'tail'])
 
     def get_list_head_tail(self):
+        """Get the head and tail of the list represented by this term.
+
+        Returns:
+            HeadTail: Named tuple of head and tail, both `Term` objects.
+        """
         head = term_t()
         tail = term_t()
-        self._require_success(PL_get_list(self._handle, head, tail))
+        self._require_success_expecting_type(
+            PL_get_list(self._handle, head, tail),
+            'list')
         return self.HeadTail(head=Term._from_handle(head.value),
                              tail=Term._from_handle(tail.value))
 
     def get_list_head(self):
+        """The head of the list represented by this term.
+
+        Returns:
+            Term:
+        """
         head = term_t()
-        self._require_success(PL_get_head(self._handle, head))
+        self._require_success_expecting_type(
+            PL_get_head(self._handle, head),
+            'list')
         return Term._from_handle(head.value)
 
     def get_list_tail(self):
+        """The tail of the list represented by this term.
+
+        Returns:
+            Term:
+        """
         tail = term_t()
-        self._require_success(PL_get_tail(self._handle, tail))
+        self._require_success_expecting_type(
+            PL_get_tail(self._handle, tail),
+            'list')
         return Term._from_handle(tail.value)
 
     def get_nil(self):
-        self._require_success(PL_get_nil(self._handle))
+        """Succeds if this term represents the list termination constant (nil).
+
+        Raises:
+            AssertionError: If this term does not represent nil.
+        """
+        self._require_success(
+            PL_get_nil(self._handle))
+
+    # TODO: PL_skip_list
 
     def put_variable(self):
+        """Put a fresh variable in this term, resetting it to its initial state.
+        """
         PL_put_variable(self._handle)
 
     def put_atom(self, atom):
+        """Put an atom in this term.
+
+        Args:
+            atom (Atom): Atom to put in this term.
+        """
         PL_put_atom(self._handle, atom._handle)
 
     def put_bool(self, val):
-        PL_put_bool(self._handle, int(val))
+        """Put a boolean in this term.
 
-    def put_atom_chars(self, chars):
-        PL_put_atom_chars(self._handle, chars)
+        Puts either the atom ``true`` or the atom ``false``.
+        """
+        PL_put_bool(self._handle, int(bool(val)))
 
-    def put_string_chars(self, chars):
-        PL_put_string_chars(self._handle, chars)
+    def put_atom_name(self, atom_name):
+        """Put an atom in this term, constructed from a string name.
+
+        Args:
+            atom_name (str): Name of the atom to put in this term.
+        """
+        encoded_atom_name = atom_name.encode()
+        PL_put_atom_nchars(self._handle,
+                           len(encoded_atom_name),
+                           encoded_atom_name)
+
+    def put_string(self, string):
+        """Put a string in the term."""
+        encoded_string = string.encode()
+        self._require_success(
+            PL_put_string_nchars(self._handle,
+                                 len(encoded_string),
+                                 encoded_string))
+
+    def put_list_chars(self, bytes_):
+        """Put a byte string in the term as a list of characters."""
+        self._require_success(
+            PL_put_list_nchars(self._handle,
+                               len(bytes_),
+                               bytes_))
 
     def put_integer(self, val):
-        PL_put_integer(self._handle, val)
-
-    def put_int64(self, val):
-        PL_put_int64(self._handle, val)
+        """Put an integer in the term."""
+        self._require_success(
+            PL_put_int64(self._handle, val))
 
     def put_pointer(self, address):
-        PL_put_pointer(self._handle, address)
+        """Put an integer address in the term."""
+        self._require_success(
+            PL_put_pointer(self._handle, address))
 
     def put_float(self, val):
-        PL_put_float(self._handle, val)
+        """Put a floating-point value in the term."""
+        self._require_success(
+            PL_put_float(self._handle, val))
 
     def put_functor(self, functor):
-        PL_put_functor(self._handle, functor._handle)
+        """Put a compound term created from functor in this term.
+
+        The arguments of the compound term are variables.
+        To create a term with instantiated arguments, use `cons_functor`.
+        """
+        self._require_success(
+            PL_put_functor(self._handle, functor._handle))
 
     def put_list(self):
-        PL_put_list(self._handle)
+        """Put a list pair in this term, whose head and tail are variables.
+
+        Like `put_functor` but using the ``[|]`` functor.
+        """
+        self._require_success(
+            PL_put_list(self._handle))
 
     def put_nil(self):
-        PL_put_nil(self._handle)
+        """Put the list terminator constant in this term."""
+        self._require_success(
+            PL_put_nil(self._handle))
 
     def put_term(self, term):
+        """Set this term to reference the new term."""
         PL_put_term(self._handle, term._handle)
 
     def cons_functor(self, functor, *args):
-        PL_cons_functor(self._handle, functor._handle,
-                        *[arg._handle for arg in args])
+        """Set this term to a compound term created from `functor` and `args`.
 
-    def cons_functor_v(self, functor, a0):
-        PL_cons_functor_v(self._handle, functor._handle, a0._handle)
+        The length of `args` must be the same as the arity of `functor`.
+        """
+        self._require_success(
+            PL_cons_functor(self._handle, functor._handle,
+                            *[arg._handle for arg in args]))
+
+    def cons_functor_v(self, functor, args):
+        """Set this term to a compound term created from `functor` and args.
+
+        Args:
+            functor (Functor): Functor used to create the compound term.
+            args (TermList)  : A term list of arguments.
+        """
+        self._require_success(
+            PL_cons_functor_v(self._handle,
+                              functor._handle,
+                              args.head._handle))
 
     def cons_list(self, head, tail):
-        PL_cons_list(self._handle, head._handle, tail._handle)
+        """Set this term to a list constructed from head and tail."""
+        self._require_success(
+            PL_cons_list(self._handle, head._handle, tail._handle))
+
+
+class TermList(object):
+    """A collection of term references.
+
+    Required by `Term.cons_functor_v` and `Query`.
+    """
+    def __init__(self, length):
+        self._length = length
+        self.head = Term._from_handle(handle=PL_new_term_refs(length))
+
+    def __len__(self):
+        return self._length
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return [self[i] for i in range(*key.indices(self._length))]
+        elif key == 0:
+            return self.head
+        elif key >= 1 and key <= self._length:
+            return Term._from_handle(self.head._handle + key)
+        else:
+            raise IndexError()
 
 
 class Atom(HandleWrapper):
