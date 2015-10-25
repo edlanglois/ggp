@@ -7,15 +7,12 @@ from ctypes import (
     c_double,
     c_int,
     c_int64,
-    c_long,
     c_size_t,
     c_void_p,
 )
 
 from pyswipl.core import (
     BUF_DISCARDABLE,
-    BUF_RING,
-    CVT_ALL,
     CVT_WRITE,
     PL_ATOM,
     PL_BLOB,
@@ -27,31 +24,33 @@ from pyswipl.core import (
     PL_LIST_PAIR,
     PL_NIL,
     PL_POINTER,
+    PL_Q_CATCH_EXCEPTION,
+    PL_Q_NODEBUG,
     PL_STRING,
     PL_TERM,
     PL_VARIABLE,
     PL_atom_chars,
+    PL_call,
+    PL_call_predicate,
+    PL_close_query,
     PL_cons_functor,
     PL_cons_functor_v,
     PL_cons_list,
+    PL_context,
     PL_copy_term_ref,
+    PL_exception,
     PL_functor_arity,
     PL_functor_name,
     PL_get_arg,
     PL_get_atom,
-    PL_get_atom_chars,
     PL_get_atom_nchars,
     PL_get_bool,
-    PL_get_chars,
     PL_get_compound_name_arity,
     PL_get_float,
     PL_get_functor,
     PL_get_head,
     PL_get_int64,
-    PL_get_integer,
-    PL_get_intptr,
     PL_get_list,
-    PL_get_long,
     PL_get_module,
     PL_get_name_arity,
     PL_get_nchars,
@@ -73,23 +72,26 @@ from pyswipl.core import (
     PL_is_pair,
     PL_is_string,
     PL_is_variable,
+    PL_module_name,
     PL_new_atom,
     PL_new_functor,
+    PL_new_module,
     PL_new_term_ref,
     PL_new_term_refs,
+    PL_next_solution,
+    PL_open_query,
+    PL_pred,
+    PL_predicate,
     PL_put_atom,
-    PL_put_atom_chars,
     PL_put_atom_nchars,
     PL_put_bool,
     PL_put_float,
     PL_put_functor,
     PL_put_int64,
-    PL_put_integer,
     PL_put_list,
     PL_put_list_nchars,
     PL_put_nil,
     PL_put_pointer,
-    PL_put_string_chars,
     PL_put_string_nchars,
     PL_put_term,
     PL_put_variable,
@@ -468,8 +470,6 @@ class Term(HandleWrapper):
         self._require_success(
             PL_get_nil(self._handle))
 
-    # TODO: PL_skip_list
-
     def put_variable(self):
         """Put a fresh variable in this term, resetting it to its initial state.
         """
@@ -583,6 +583,18 @@ class Term(HandleWrapper):
         self._require_success(
             PL_cons_list(self._handle, head._handle, tail._handle))
 
+    def __call__(self, context_module=None):
+        """Call term like once(term).
+
+        Attempts to find an assignment of the variables in the term that
+        makes the term true.
+
+        Returns:
+            bool: True if the call succeeded.
+        """
+        return bool(PL_call(self._handle,
+                            _get_nullable_handle(context_module)))
+
 
 class TermList(object):
     """A collection of term references.
@@ -631,10 +643,8 @@ class Atom(HandleWrapper):
         PL_unregister_atom(self._handle)
 
     def __copy__(self):
+        """A new `Atom` object pointing to the same atom."""
         return self._from_handle(self._handle)
-
-    def __deepcopy__(self):
-        return Atom(name=self.get_name())
 
 
 class Functor(HandleWrapper):
@@ -656,7 +666,7 @@ class Functor(HandleWrapper):
             handle=PL_new_functor(name_handle, arity))
 
     def get_name(self):
-        """The functor's name as an Atom object."""
+        """The functor's name as an `Atom` object."""
         return Atom._from_handle(PL_functor_name(self._handle))
 
     def get_arity(self):
@@ -666,4 +676,167 @@ class Functor(HandleWrapper):
 
 class Module(HandleWrapper):
     """Prolog Module Interface"""
-    pass
+    def __init__(self, name):
+        """Finds existing module or creates a new module with given name.
+
+        Args:
+            name (Atom): Name of the module.
+        """
+        super(Module, self).__init__(handle=PL_new_module(name._handle))
+
+    @classmethod
+    def current_context(cls):
+        """Returns the current context module."""
+        return cls._from_handle(PL_context())
+
+    def get_name(self):
+        """The name of the module as an `Atom` object."""
+        return Atom._from_handle(PL_module_name(self._handle))
+
+
+class Predicate(HandleWrapper):
+    """Prolog Predicate Interface"""
+    def __init__(self, functor, module=None):
+        """Create a predicate from a functor.
+
+        Args:
+            functor (Functor): Functor used to create the predicate.
+            module (Module)  : Module containing the functor.
+                If ``None``, uses the current context module.
+        """
+        return super(Predicate, self).__init__(
+            handle=PL_pred(functor._handle, _get_nullable_handle(module)))
+
+    @classmethod
+    def from_name_arity(cls, name, arity, module_name=None):
+        """Create a predicate directly from Python's built-in types.
+
+        Args:
+            name (str)       : Name of functor used to create the predicate.
+            arity (int)      : Arity of functor used to create the predicate.
+            module_name (str): Name of module containing the functor.
+                If ``None``, uses the current context module.
+        """
+        return cls._from_handle(handle=PL_predicate(name, arity, module_name))
+
+    def __call__(self, arguments, goal_context_module=None):
+        """Call predicate with arguments.
+
+        Finds a binding for arguments that satisfies the predicate.
+        Like Query but only finds the first solution.
+
+        Args:
+            arguments (TermList)        : List of arguments to this predicate.
+            goal_context_module (Module): Context module of the goal.
+                If ``None``, the current context module is used, or ``user`` if
+                there is no context. This only matters for meta_predicates.
+
+        Returns:
+            bool: True if a binding for `arguments` was found.
+
+        Raises:
+            PrologException: If an exception was raised in Prolog.
+        """
+        success = bool(PL_call_predicate(
+            _get_nullable_handle(goal_context_module),
+            PL_Q_NODEBUG | PL_Q_CATCH_EXCEPTION,
+            self._handle,
+            arguments.head._handle))
+
+        if not success:
+            exception_term = PL_exception(self._handle)
+            if exception_term:
+                raise PrologException(Term._from_handle(exception_term))
+        return success
+
+
+class Query(object):
+    """Prolog Query Context Manager."""
+    def __init__(self, predicate, arguments, goal_context_module=None):
+        """Prepare a query.
+
+        A query conssists of a predicate (`predicate`) and a list of arguments
+        (`arguments`). Each solution is an assignment to variables in
+        `arguments` that satisfies the predicate.
+
+        A query behaves statefully. The solutions must be read from `arguments`.
+
+        Args:
+            predicate (Predicate)       : Predicate to query.
+            arguments (TermList)        : List of argument terms to `predicate`.
+            goal_context_module (Module): Context module of the goal.
+                If ``None``, the current context module is used, or ``user`` if
+                there is no context. This only matters for meta_predicates.
+
+        Note
+        ----
+        Only one query can be active at a time, but the query is not activated
+        until `__enter__` is called.
+        """
+        self.predicate = predicate
+        self.arguments = arguments
+        self.goal_context_module = goal_context_module
+        self.active_query = None
+
+    def __enter__(self):
+        self.active_query = ActiveQuery(
+            predicate=self.predicate,
+            arguments=self.arguments,
+            goal_context_module=self.goal_context_module)
+        return self.active_query
+
+    def __exit__(self, type, value, traceback):
+        self.active_query.close()
+
+
+class PrologException(Exception):
+    def __init__(self, exception_term):
+        self.exception_term = exception_term
+
+    def __str__(self):
+        return "Prolog Exception:\n{!s}".format(self.exception_term)
+
+
+class ActiveQuery(HandleWrapper):
+    """Interface to an active Prolog Query.
+
+    Only one query can be active at a time.
+    """
+    def __init__(self, predicate, arguments, goal_context_module=None):
+        """Create an active query. Arguments are the same as `Query.__init__`.
+        """
+        super(ActiveQuery, self).__init__(
+            handle=PL_open_query(
+                _get_nullable_handle(goal_context_module),
+                PL_Q_NODEBUG | PL_Q_CATCH_EXCEPTION,
+                self.predicate._handle,
+                self.arguments.head._handle))
+
+    def next_solution(self):
+        """Find the next solution, updating `arguments`.
+
+        Returns:
+            bool: ``True`` if a solution was found, otherwise returns ``False``.
+
+        Raises:
+            PrologException: If an exception was raised in Prolog.
+        """
+        success = bool(PL_next_solution(self._handle))
+        if not success:
+            exception_term = PL_exception(self._handle)
+            if exception_term:
+                raise PrologException(Term._from_handle(exception_term))
+        return success
+
+    def close(self):
+        """Close the query and destory all data and bindings associated with it.
+        """
+        PL_close_query(self._handle)
+
+
+def _get_nullable_handle(handle_wrapper):
+    """Return the handle of `handle_wrapper` or None"""
+    if handle_wrapper is None:
+        return None
+    else:
+        return handle_wrapper._handle
