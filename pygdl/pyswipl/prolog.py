@@ -32,6 +32,7 @@ from .core import (
     PL_atom_chars,
     PL_call,
     PL_call_predicate,
+    PL_chars_to_term,
     PL_close_query,
     PL_cons_functor,
     PL_cons_functor_v,
@@ -120,6 +121,26 @@ _term_type_code_name = {
     PL_CHARS: 'chars',
     PL_POINTER: 'pointer',
 }
+
+__all__ = [
+    'ActiveQuery',
+    'Atom',
+    'Functor',
+    'Module',
+    'Predicate',
+    'PrologException',
+    'Query',
+    'Term',
+    'TermList',
+]
+
+
+class PrologException(Exception):
+    def __init__(self, exception_term):
+        self.exception_term = exception_term
+
+    def __str__(self):
+        return "Prolog Exception:\n{!s}".format(self.exception_term)
 
 
 class HandleWrapper(object):
@@ -557,6 +578,21 @@ class Term(HandleWrapper):
         """Set this term to reference the new term."""
         PL_put_term(self._handle, term._handle)
 
+    def put_parsed(self, string):
+        """Parse `string` as Prolog as place the result in this term.
+
+        Args:
+            string (str): A term string in Prolog syntax.
+                Optionally ends with a full-stop (.)
+
+        Raises:
+            PrologException: If the parse fails.
+                The exception is also stored in this term.
+        """
+        success = PL_chars_to_term(string.encode(), term_t)
+        if not success:
+            raise PrologException(self)
+
     def cons_functor(self, functor, *args):
         """Set this term to a compound term created from `functor` and `args`.
 
@@ -787,14 +823,6 @@ class Query(object):
 
     def __exit__(self, type, value, traceback):
         self.active_query.close()
-
-
-class PrologException(Exception):
-    def __init__(self, exception_term):
-        self.exception_term = exception_term
-
-    def __str__(self):
-        return "Prolog Exception:\n{!s}".format(self.exception_term)
 
 
 class ActiveQuery(HandleWrapper):
