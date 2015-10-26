@@ -751,7 +751,7 @@ PL_new_atom.restype = atom_t
 
 # PL_EXPORT(atom_t)        PL_new_atom_nchars(size_t len, const char *s);
 PL_new_atom_nchars = _lib.PL_new_atom_nchars
-PL_new_atom_nchars.argtypes = [c_size_t, c_char_p]
+PL_new_atom_nchars.argtypes = [c_size_t, POINTER(c_char)]
 PL_new_atom_nchars.restype = atom_t
 
 # PL_EXPORT(atom_t)        PL_new_atom_wchars(size_t len, const pl_wchar_t *s);
@@ -767,7 +767,7 @@ PL_atom_chars.restype = c_char_p
 # PL_EXPORT(const char *)  PL_atom_nchars(atom_t a, size_t *len);
 PL_atom_nchars = _lib.PL_atom_nchars
 PL_atom_nchars.argtypes = [atom_t, POINTER(c_size_t)]
-PL_atom_nchars.restype = c_char_p
+PL_atom_nchars.restype = POINTER(c_char)
 
 # PL_EXPORT(const wchar_t *)    PL_atom_wchars(atom_t a, size_t *len);
 PL_atom_wchars = _lib.PL_atom_wchars
@@ -818,7 +818,7 @@ PL_get_atom_chars.restype = c_int
 # #define PL_get_string_chars(t, s, l) PL_get_string(t,s,l)
 # PL_EXPORT(int)         PL_get_string(term_t t, char **s, size_t *len);
 PL_get_string = _lib.PL_get_string
-PL_get_string.argtypes = [term_t, POINTER(c_char_p), POINTER(c_size_t)]
+PL_get_string.argtypes = [term_t, POINTER(POINTER(c_char)), POINTER(c_size_t)]
 PL_get_string.restype = c_int
 PL_get_string_chars = PL_get_string
 
@@ -835,20 +835,21 @@ PL_get_list_chars.restype = c_int
 
 # PL_EXPORT(int)           PL_get_atom_nchars(term_t t, size_t *len, char **a);
 PL_get_atom_nchars = _lib.PL_get_atom_nchars
-PL_get_atom_nchars.argtypes = [term_t, POINTER(c_size_t), POINTER(c_char_p)]
+PL_get_atom_nchars.argtypes = [term_t, POINTER(c_size_t),
+                               POINTER(POINTER(c_char))]
 PL_get_atom_nchars.restype = c_int
 
 # PL_EXPORT(int)           PL_get_list_nchars(term_t l, size_t *len, char **s,
 #                                             unsigned int flags);
 PL_get_list_nchars = _lib.PL_get_list_nchars
-PL_get_list_nchars.argtypes = [term_t, POINTER(c_size_t), POINTER(c_char_p),
-                               c_uint]
+PL_get_list_nchars.argtypes = [term_t, POINTER(c_size_t),
+                               POINTER(POINTER(c_char)), c_uint]
 PL_get_list_nchars.restype = c_int
 
 # PL_EXPORT(int)           PL_get_nchars(term_t t, size_t *len, char **s,
 #                                        unsigned int flags);
 PL_get_nchars = _lib.PL_get_nchars
-PL_get_nchars.argtypes = [term_t, POINTER(c_size_t), POINTER(c_char_p),
+PL_get_nchars.argtypes = [term_t, POINTER(c_size_t), POINTER(POINTER(c_char)),
                           c_uint]
 PL_get_nchars.restype = c_int
 
@@ -1055,25 +1056,25 @@ PL_put_list_codes.restype = c_int
 # PL_EXPORT(int)                PL_put_atom_nchars(term_t t, size_t l,
 #                                                  const char *chars);
 PL_put_atom_nchars = _lib.PL_put_atom_nchars
-PL_put_atom_nchars.argtypes = [term_t, c_size_t, c_char_p]
+PL_put_atom_nchars.argtypes = [term_t, c_size_t, POINTER(c_char)]
 PL_put_atom_nchars.restype = c_int
 
 # PL_EXPORT(int)                PL_put_string_nchars(term_t t, size_t len,
 #                                                    const char *chars);
 PL_put_string_nchars = _lib.PL_put_string_nchars
-PL_put_string_nchars.argtypes = [term_t, c_size_t, c_char_p]
+PL_put_string_nchars.argtypes = [term_t, c_size_t, POINTER(c_char)]
 PL_put_string_nchars.restype = c_int
 
 # PL_EXPORT(int)                PL_put_list_nchars(term_t t, size_t l,
 #                                                  const char *chars);
 PL_put_list_nchars = _lib.PL_put_list_nchars
-PL_put_list_nchars.argtypes = [term_t, c_size_t, c_char_p]
+PL_put_list_nchars.argtypes = [term_t, c_size_t, POINTER(c_char)]
 PL_put_list_nchars.restype = c_int
 
 # PL_EXPORT(int)                PL_put_list_ncodes(term_t t, size_t l,
 #                                                  const char *chars);
 PL_put_list_ncodes = _lib.PL_put_list_ncodes
-PL_put_list_ncodes.argtypes = [term_t, c_size_t, c_char_p]
+PL_put_list_ncodes.argtypes = [term_t, c_size_t, POINTER(c_char)]
 PL_put_list_ncodes.restype = c_int
 
 # PL_EXPORT(int)                PL_put_integer(term_t t, long i);
@@ -1160,23 +1161,23 @@ PL_unify_string_chars.restype = c_int
 
 # PL_EXPORT(int)        PL_unify_atom_nchars(term_t t, size_t l, const char *s);
 PL_unify_atom_nchars = _lib.PL_unify_atom_nchars
-PL_unify_atom_nchars.argtypes = [term_t, c_size_t, c_char_p]
+PL_unify_atom_nchars.argtypes = [term_t, c_size_t, POINTER(c_char)]
 PL_unify_atom_nchars.restype = c_int
 
 # PL_EXPORT(int)        PL_unify_list_ncodes(term_t t, size_t l, const char *s);
 PL_unify_list_ncodes = _lib.PL_unify_list_ncodes
-PL_unify_list_ncodes.argtypes = [term_t, c_size_t, c_char_p]
+PL_unify_list_ncodes.argtypes = [term_t, c_size_t, POINTER(c_char)]
 PL_unify_list_ncodes.restype = c_int
 
 # PL_EXPORT(int)        PL_unify_list_nchars(term_t t, size_t l, const char *s);
 PL_unify_list_nchars = _lib.PL_unify_list_nchars
-PL_unify_list_nchars.argtypes = [term_t, c_size_t, c_char_p]
+PL_unify_list_nchars.argtypes = [term_t, c_size_t, POINTER(c_char)]
 PL_unify_list_nchars.restype = c_int
 
 # PL_EXPORT(int)        PL_unify_string_nchars(term_t t, size_t len,
 #                                              const char *chars);
 PL_unify_string_nchars = _lib.PL_unify_string_nchars
-PL_unify_string_nchars.argtypes = [term_t, c_size_t, c_char_p]
+PL_unify_string_nchars.argtypes = [term_t, c_size_t, POINTER(c_char)]
 PL_unify_string_nchars.restype = c_int
 
 # PL_EXPORT(int)        PL_unify_bool(term_t t, int n);
@@ -1231,7 +1232,7 @@ PL_unify_term.restype = c_int
 # PL_EXPORT(int)        PL_unify_chars(term_t t, int flags, size_t len,
 #                                      const char *s);
 PL_unify_chars = _lib.PL_unify_chars
-PL_unify_chars.argtypes = [term_t, c_int, c_size_t, c_char_p]
+PL_unify_chars.argtypes = [term_t, c_int, c_size_t, POINTER(c_char)]
 PL_unify_chars.restype = c_int
 
 
@@ -1272,7 +1273,7 @@ PL_get_wchars.restype = c_int
 
 # PL_EXPORT(size_t)     PL_utf8_strlen(const char *s, size_t len);
 PL_utf8_strlen = _lib.PL_utf8_strlen
-PL_utf8_strlen.argtypes = [c_char_p, c_size_t]
+PL_utf8_strlen.argtypes = [POINTER(c_char), c_size_t]
 PL_utf8_strlen.restype = c_size_t
 
 
@@ -1512,28 +1513,6 @@ class ExitHook(object):
 
 _hook = ExitHook()
 _hook.hook()
-
-_isCleaned = False
-# create a property for Atom's delete method in order to avoid
-# segmentation fault
-cleaned = property(_isCleaned)
-
-# register the cleanup function to be executed on system exit
-
-
-@atexit.register
-def cleanupProlog():
-    # only do something if prolog has been initialised
-    if PL_is_initialised(None, None):
-
-        # clean up the prolog system using the caught exit code
-        # if exit code is None, the program exits normally and we can use 0
-        # instead.
-        # TODO Prolog documentation says cleanup with code 0 may be interrupted
-        # If the program has come to an end the prolog system should not
-        # interfere with that. Therefore we may want to use 1 instead of 0.
-        PL_cleanup(int(_hook.exit_code or 0))
-        _isCleaned = True
 
 
 class PrologError(Exception):

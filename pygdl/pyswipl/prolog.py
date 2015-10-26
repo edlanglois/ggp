@@ -3,7 +3,6 @@ from ctypes import (
     POINTER,
     byref,
     c_char,
-    c_char_p,
     c_double,
     c_int,
     c_int64,
@@ -155,6 +154,24 @@ class HandleWrapper(object):
         return new_obj
 
 
+# class TermMetaType(type):
+#     def __getattr__(cls, name):
+#         if name.startswith('put_'):
+#             suffix = name[4:]
+#             from_method_name = 'from_' + suffix
+#
+#             if not hasattr(cls, put_method_name):
+#                 return super(TermMetaType, cls).__getattr__(name)
+#
+#             new_term = Term()
+#             try:
+#                 return getattr(new_term, put_method_name)
+#             except AttributeError:
+#                 return super(TermMetaType, cls).__getattr__(name)
+#
+#         return super(TermMetaType, cls).__getattr__(name)
+
+
 class Term(HandleWrapper):
     def __init__(self):
         """Initialize a new term. The term is initially a variable."""
@@ -167,6 +184,20 @@ class Term(HandleWrapper):
     def __deepcopy__(self):
         """Creates a new Prolog term, copied from the old."""
         return self._from_handle(handle=PL_copy_term_ref(self._handle))
+
+    def __getitem__(self, key):
+        if not isinstance(key, int):
+            raise TypeError('Indices must be integers.')
+        if key < 0:
+            raise IndexError('Indicies must be non-negative integers.')
+        if not self.is_compound():
+            raise TypeError('Indexing is only supported for compound types.')
+        _, arity = self.get_compound_name_arity()
+        if key >= arity:
+            raise IndexError(
+                'Index out of range. ({index} >= term arity {arity})'.format(
+                    index=key, arity=arity))
+        return self.get_arg(key)
 
     def type(self):
         """Term type as a string.
@@ -299,7 +330,7 @@ class Term(HandleWrapper):
     @staticmethod
     def _decode_ptr_len_string(ptr, length, encoding='utf8'):
         """Decode a string from a ctypes pointer and length."""
-        return ptr[:length].decode(encoding)
+        return ptr[:length.value].decode(encoding)
 
     def get_atom(self):
         """An `Atom` object representing this term, if it is a prolog atom."""
@@ -311,7 +342,7 @@ class Term(HandleWrapper):
 
     def get_atom_chars(self):
         """The value of this term as a string, if it is a prolog atom."""
-        s = c_char_p()
+        s = POINTER(c_char)
         length = c_size_t()
         self._require_success_expecting_type(
             PL_get_atom_nchars(self._handle, byref(length), byref(s)),
@@ -556,7 +587,7 @@ class Term(HandleWrapper):
         """Put a compound term created from functor in this term.
 
         The arguments of the compound term are variables.
-        To create a term with instantiated arguments, use `cons_functor`.
+        To create a term with instantiated arguments, use `put_cons_functor`.
         """
         self._require_success(
             PL_put_functor(self._handle, functor._handle))
@@ -593,16 +624,19 @@ class Term(HandleWrapper):
         if not success:
             raise PrologException(self)
 
-    def cons_functor(self, functor, *args):
+    def put_cons_functor(self, functor, *args):
         """Set this term to a compound term created from `functor` and `args`.
 
         The length of `args` must be the same as the arity of `functor`.
         """
+        if not all(isinstance(arg, Term) for arg in args):
+            raise TypeError(
+                'All arguments after `functor` must be `Term` objects.')
         self._require_success(
             PL_cons_functor(self._handle, functor._handle,
                             *[arg._handle for arg in args]))
 
-    def cons_functor_v(self, functor, args):
+    def put_cons_functor_v(self, functor, args):
         """Set this term to a compound term created from `functor` and args.
 
         Args:
@@ -614,7 +648,7 @@ class Term(HandleWrapper):
                               functor._handle,
                               args.head._handle))
 
-    def cons_list(self, head, tail):
+    def put_cons_list(self, head, tail):
         """Set this term to a list constructed from head and tail."""
         self._require_success(
             PL_cons_list(self._handle, head._handle, tail._handle))
@@ -630,6 +664,33 @@ class Term(HandleWrapper):
         """
         return bool(PL_call(self._handle,
                             _get_nullable_handle(context_module)))
+
+
+def _add_from_method_to_class(klass, put_method_name, put_method):
+    suffix = put_method_name[4:]
+    from_method_name = 'from_' + suffix
+
+    def from_method(cls, *args, **kwargs):
+        new_term = cls()
+        put_method(new_term, *args, **kwargs)
+        return new_term
+
+    from_method.__name__ = from_method_name
+    from_method.__qualname__ = str(klass.__name__) + '.' + from_method_name
+    from_method.__doc__ = 'A new Term initialized using `{}`'.format(
+        put_method_name)
+    setattr(klass, from_method_name, classmethod(from_method))
+
+# Generate a from_<type> method for each put_<type> method.
+for put_method_name in dir(Term):
+    if not put_method_name.startswith('put_'):
+        continue
+
+    put_method = getattr(Term, put_method_name)
+
+    if not callable(put_method):
+        continue
+    _add_from_method_to_class(Term, put_method_name, put_method)
 
 
 class TermList(object):
@@ -659,7 +720,7 @@ class Atom(HandleWrapper):
     """Prolog Atom Interface"""
     def __init__(self, name):
         """Create a named atom."""
-        super(Atom, self).__init__(handle=PL_new_atom(name))
+        super(Atom, self).__init__(handle=PL_new_atom(name.encode()))
 
     @classmethod
     def _from_handle(cls, handle):
@@ -674,6 +735,9 @@ class Atom(HandleWrapper):
 
     def __str__(self):
         return self.get_name()
+
+    def __repr__(self):
+        return 'Atom(name={name})'.format(name=self.get_name())
 
     def __del__(self):
         PL_unregister_atom(self._handle)
@@ -700,6 +764,14 @@ class Functor(HandleWrapper):
 
         super(Functor, self).__init__(
             handle=PL_new_functor(name_handle, arity))
+
+    def __str__(self):
+        return "{name}/{arity}".format(name=self.get_name(),
+                                       arity=self.get_arity())
+
+    def __repr__(self):
+        return "Functor(name={name}, arity={arity})".format(
+            name=self.get_name(), arity=self.get_arity())
 
     def get_name(self):
         """The functor's name as an `Atom` object."""
