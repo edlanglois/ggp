@@ -135,11 +135,17 @@ __all__ = [
 
 
 class PrologException(Exception):
+    """An exception raised wiithin the Prolog system."""
     def __init__(self, exception_term):
         self.exception_term = exception_term
 
     def __str__(self):
         return "Prolog Exception:\n{!s}".format(self.exception_term)
+
+
+class CallError(Exception):
+    """A call failed."""
+    pass
 
 
 class HandleWrapper(object):
@@ -602,7 +608,7 @@ class Term(HandleWrapper):
             PrologException: If the parse fails.
                 The exception is also stored in this term.
         """
-        success = PL_chars_to_term(string.encode(), term_t)
+        success = PL_chars_to_term(string.encode(), self._handle)
         if not success:
             raise PrologException(self)
 
@@ -635,17 +641,27 @@ class Term(HandleWrapper):
         self._require_success(
             PL_cons_list(self._handle, head._handle, tail._handle))
 
-    def __call__(self, context_module=None):
+    def __call__(self, context_module=None, check=False):
         """Call term like once(term).
 
         Attempts to find an assignment of the variables in the term that
         makes the term true.
 
+        Args:
+            context_module (Module) : Context module of the goal.
+            check (bool)            : Check that the call succeeded.
+
         Returns:
             bool: True if the call succeeded.
+
+        Raises:
+            CallError: If the call failed and `check` is ``True``.
         """
-        return bool(PL_call(self._handle,
-                            _get_nullable_handle(context_module)))
+        success = bool(PL_call(self._handle,
+                               _get_nullable_handle(context_module)))
+        if check and not success:
+            raise CallError()
+        return success
 
 
 def _add_from_method_to_class(klass, put_method_name, put_method):
@@ -688,11 +704,7 @@ class TermList(object):
         return self._length
 
     def __getitem__(self, key):
-        if isinstance(key, slice):
-            return [self[i] for i in range(*key.indices(self._length))]
-        elif key == 0:
-            return self.head
-        elif key >= 1 and key <= self._length:
+        if isinstance(key, int) and key >= 0 and key <= self._length:
             return Term._from_handle(self.head._handle + key)
         else:
             raise IndexError()
@@ -809,7 +821,7 @@ class Predicate(HandleWrapper):
         """
         return cls._from_handle(handle=PL_predicate(name, arity, module_name))
 
-    def __call__(self, arguments, goal_context_module=None):
+    def __call__(self, arguments, goal_context_module=None, check=False):
         """Call predicate with arguments.
 
         Finds a binding for arguments that satisfies the predicate.
@@ -820,12 +832,14 @@ class Predicate(HandleWrapper):
             goal_context_module (Module): Context module of the goal.
                 If ``None``, the current context module is used, or ``user`` if
                 there is no context. This only matters for meta_predicates.
+            check (bool)                : Check that the call succeeded.
 
         Returns:
             bool: True if a binding for `arguments` was found.
 
         Raises:
             PrologException: If an exception was raised in Prolog.
+            CallError      : If the call failed and `check` is ``True``.
         """
         success = bool(PL_call_predicate(
             _get_nullable_handle(goal_context_module),
@@ -837,7 +851,11 @@ class Predicate(HandleWrapper):
             exception_term = PL_exception(self._handle)
             if exception_term:
                 raise PrologException(Term._from_handle(exception_term))
+            if check:
+                raise CallError()
         return success
+
+    # TODO: Predicate info method
 
 
 class Query(object):
@@ -891,8 +909,8 @@ class ActiveQuery(HandleWrapper):
             handle=PL_open_query(
                 _get_nullable_handle(goal_context_module),
                 PL_Q_NODEBUG | PL_Q_CATCH_EXCEPTION,
-                self.predicate._handle,
-                self.arguments.head._handle))
+                predicate._handle,
+                arguments.head._handle))
 
     def next_solution(self):
         """Find the next solution, updating `arguments`.

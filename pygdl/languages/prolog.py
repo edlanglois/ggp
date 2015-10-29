@@ -371,7 +371,6 @@ class PrologList(PrologBaseCompoundTerm):
 
         super().__init__(name='[]', args=list(iterable))
 
-
     def __str__(self):
         return '[{}]'.format(self._comma_separated_args_str())
 
