@@ -154,24 +154,6 @@ class HandleWrapper(object):
         return new_obj
 
 
-# class TermMetaType(type):
-#     def __getattr__(cls, name):
-#         if name.startswith('put_'):
-#             suffix = name[4:]
-#             from_method_name = 'from_' + suffix
-#
-#             if not hasattr(cls, put_method_name):
-#                 return super(TermMetaType, cls).__getattr__(name)
-#
-#             new_term = Term()
-#             try:
-#                 return getattr(new_term, put_method_name)
-#             except AttributeError:
-#                 return super(TermMetaType, cls).__getattr__(name)
-#
-#         return super(TermMetaType, cls).__getattr__(name)
-
-
 class Term(HandleWrapper):
     def __init__(self):
         """Initialize a new term. The term is initially a variable."""
