@@ -2,7 +2,8 @@ import copy
 import logging
 import os.path
 
-from pygdl.pyswipl.extras import consult, make_and_term, and_functor
+from pygdl.pyswipl.extras import (
+    and_functor, consult, make_and_term, make_list_term)
 from pygdl.pyswipl.prolog import (
     Atom,
     Functor,
@@ -12,10 +13,7 @@ from pygdl.pyswipl.prolog import (
     Term,
     TermList,
 )
-from pygdl.languages.prolog import (
-    PrologCompoundTerm,
-    PrologList,
-)
+from pygdl.languages.prolog import PrologList
 from pygdl.paths import prolog_dir
 
 logger = logging.getLogger(__name__)
@@ -57,6 +55,10 @@ class GeneralGameManager(object):
     def game(self, game_id):
         """Get a GeneralGame object representing game_id"""
         return GeneralGame(self, game_id)
+
+    def role_object(self, role):
+        """Convert a role string to a role object usable in GGP methods."""
+        return Atom(role)
 
     @staticmethod
     def game_state_term_single(game_id, game_state, query):
@@ -154,10 +156,6 @@ class GeneralGame(object):
 
     def initial_state(self):
         """Return the initial state of the game as a GeneralGameState"""
-        roles = self.roles()
-        rl = list(roles)
-        print(rl)
-        import pdb; pdb.set_trace()  # XXX BREAKPOINT
         return GeneralGameState(self)
 
     def roles(self):
@@ -180,9 +178,6 @@ class GeneralGame(object):
         It is an iterator of all moves which may be available to role at some
         time in the game.
         """
-        if not isinstance(role, Atom):
-            role = Atom(role)
-
         input_query_term = Term.from_functor(self._input_functor)
         input_query_term[0].put_atom(role)
         move_variable = input_query_term[1]
@@ -208,6 +203,9 @@ class GeneralGame(object):
         """Minimum utility achievable by any player."""
         return 0
 
+    def role_object(self, role):
+        return self.game_manager.role_object(role)
+
     def stateless_query_term(self, *queries):
         return self.stateful_query_term(self._empty_game_state_term, *queries)
 
@@ -223,6 +221,27 @@ class GeneralGame(object):
 
 class GeneralGameState(object):
     """A general game state."""
+
+    _terminal_atom = Atom('terminal')
+
+    _base_functor = GeneralGame._base_functor
+    _does_functor = Functor(Atom('does'), 2)
+    _eq_functor = Functor(Atom('='), 2)
+    _final_truth_state_functor = Functor(Atom('final_truth_state'), 2)
+    _goal_functor = Functor(Atom('goal'), 2)
+    _legal_functor = Functor(Atom('legal'), 2)
+    _prepare_moves_functor = Functor(Atom('prepare_moves'), 3)
+    _true_functor = Functor(Atom('true'), 1)
+    _truth_history_functor = Functor(Atom('truth_history'), 3)
+
+    _final_truth_state_predicate = Predicate(
+        functor=_final_truth_state_functor,
+        module=GeneralGameManager._ggp_state)
+    _length_predicate = Predicate(functor=Functor(Atom('length'), 2))
+    _truth_history_predicate = Predicate(
+        functor=_truth_history_functor,
+        module=GeneralGameManager._ggp_state)
+
     def __init__(self, game,
                  move_history=None,
                  truth_history=None,
@@ -230,59 +249,65 @@ class GeneralGameState(object):
         self.game = game
 
         if move_history is None:
-            self.move_history = PrologList()
+            self.move_history = Term.from_nil()
         else:
             self.move_history = move_history
 
         if truth_history is None:
-            assert truth_state is None
-            assignment = self._prolog().query_first((
-                'truth_history({game_id!s}, {move_history!s}, TruthHistory), '
-                'final_truth_state(TruthHistory, TruthState)').format(
-                    game_id=self.game_id(),
-                    move_history=self.move_history))
-
-            self.truth_history = assignment['TruthHistory']
-            self.truth_state = assignment['TruthState']
+            args = TermList(3)
+            args[0].put_term(self.game_id())
+            args[1].put_term(self.move_history)
+            self._truth_history_predicate(args, check=True)
+            self.truth_history = Term.from_term(args[2])
         else:
             self.truth_history = truth_history
 
-            if truth_state is None:
-                assignment = self._prolog().query_first(
-                    'final_truth_state({truth_history!s}, TruthState)'.format(
-                        truth_history=self.truth_history))
-                self.truth_state = assignment['TruthState']
-            else:
-                self.truth_state = truth_state
+        if truth_state is None:
+            args = TermList(2)
+            args[0].put_term(self.truth_history)
+            self._final_truth_state_predicate(args, check=True)
+            self.truth_state = Term.from_term(args[1])
+        else:
+            self.truth_state = truth_state
 
     def turn_number(self):
         """The current turn number."""
-        return len(self.move_history)
+        args = TermList(2)
+        args[0].put_term(self.move_history)
+        self._length_predicate(args, check=True)
+        return int(args[1])
 
     def utility(self, role):
         """The utility of the current state for the given role."""
-        return int(self._prolog().query_first(
-            self.query_term('goal({role!s}, Utility)'.format(
-                role=role)))['Utility'].name)
+        utility = Term()
+        utility_query = Term.from_cons_functor(
+            self._goal_functor, Term.from_atom(role), utility)
+        self.query_term(utility_query)(check=True)
+        return int(utility)
 
     def legal_moves(self, role):
         """An iterator of legal moves for role in the current state."""
-        return (assignment['Move']
-                for assignment
-                in self._prolog().query(
-                    self.query_term('legal({role!s}, Move)'.format(role=role))
-                ))
+        move = Term()
+        move_query = Term.from_cons_functor(
+            self._legal_functor, Term.from_atom(role), move)
+        with self.query(move_query) as q:
+            while q.next_solution():
+                yield copy.deepcopy(move)
 
     def state_terms(self):
         """Iterator of the base terms that are true for this state."""
-        return (assignment['X']
-                for assignment
-                in self._prolog().query(
-                    self.query_term('base(X)', 'true(X)')))
+        state_term = Term()
+        base_term_query = Term.from_cons_functor(
+            self._base_functor, state_term)
+        true_term_query = Term.from_cons_functor(
+            self._true_functor, state_term)
+        with self.query(base_term_query, true_term_query) as q:
+            while q.next_solution():
+                yield copy.deepcopy(state_term)
 
     def is_terminal(self):
         """True if the current game state is terminal."""
-        return self._prolog().query_satisfied(self.query_term('terminal'))
+        return self.query_term(Term.from_atom(self._terminal_atom))
 
     def apply_moves(self, moves):
         """A new game state representing the game after moves are applied.
@@ -290,46 +315,55 @@ class GeneralGameState(object):
         Returns a new state, this state is unchanged.
         `moves` is a dictionary of role => move.
         """
-        moves_term = PrologList(tuple(
-            PrologCompoundTerm(name='does', args=(role, action))
+        moves_term = make_list_term(*(
+            Term.from_cons_functor(self._does_term,
+                                   Term.from_atom(role), action)
             for (role, action) in moves.items()))
 
-        # moves_term = PL_new_term_ref()
-        # putList(moves_term,
-        #         [self.pyswip_does_functor(pyswip.Atom(role),
-        #                                   ryswip.
+        # prepare_moves(game_id, moves_term, PreparedMoves)
+        prepared_moves = Term()
+        prepare_moves_query = Term.from_cons_functor(
+            self._prepare_moves_functor,
+            self.game_id(), moves_term, prepared_moves)
 
-        assignment = self._prolog().query_first((
-            'prepare_moves({game_id!s}, {moves_term!s}, PreparedMoves),'
-            'MoveHistory = [PreparedMoves | {old_move_history!s}],'
-            'truth_history({game_id!s}, MoveHistory, {old_truth_history!s},'
-            '              TruthHistory),'
-            'final_truth_state(TruthHistory, TruthState)').format(
-                game_id=self.game_id(),
-                moves_term=moves_term,
-                old_move_history=self.move_history,
-                old_truth_history=self.truth_history))
+        # NewMoveHistory = [PreparedMoves | old_move_history]
+        new_move_history = Term()
+        move_history_query = Term.from_cons_functor(
+            self._eq_functor, new_move_history, Term.from_cons_list(
+                prepared_moves, self.move_history))
 
-        print('-----------------')
-        print(assignment)
-        print('\n\n')
-        print(assignment.keys())
-        print('\n\n')
-        print({key: len(str(value)) for key, value in assignment.items()})
-        print('\n\n')
+        # truth_history(game_id, NewMoveHistory, old_truth_history,
+        #               NewTruthHistory)
+        new_truth_history = Term()
+        truth_history_query = Term.from_cons_functor(
+            self._truth_history_functor,
+            self.game_id(), new_move_history, self.truth_history,
+            new_truth_history)
+
+        # final_truth_state(NewTruthHistory, NewTruthState)
+        new_truth_state = Term()
+        truth_state_query = Term.from_cons_functor(
+            self._final_truth_state_functor,
+            new_truth_history, new_truth_state)
+
+        self.query(prepare_moves_query, move_history_query, truth_history_query,
+                   truth_state_query)(check=True)
 
         return GeneralGameState(
             game=self.game,
-            move_history=assignment['MoveHistory'],
-            truth_history=assignment['TruthHistory'],
-            truth_state=assignment['TruthState'],
+            move_history=new_move_history,
+            truth_history=new_truth_history,
+            truth_state=new_truth_state,
         )
 
     def query_term(self, *queries):
         return self.game.stateful_query_term(self.truth_state, *queries)
 
+    def query(self, *queries):
+        return self.game.stateful_query(self.truth_state, *queries)
+
     def game_id(self):
         return self.game.game_id
 
-    def _prolog(self):
-        return self.game.game_manager.prolog
+    def role_object(self, role):
+        return self.game.role_object(role)

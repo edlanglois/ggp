@@ -70,9 +70,9 @@ class GamePlayer(object):
         self.logger.info('Created {!s} with role "{!s}"'.format(
             self.__class__.__name__, role))
         self.game = game
-        self.role = role
         self.play_clock = play_clock
 
+        self.role = self.game.role_object(role)
         self.roles = tuple(self.game.roles())
         self.game_state = self.game.initial_state()
 

@@ -169,6 +169,14 @@ class Term(HandleWrapper):
         """A Prolog string representing this term."""
         return self.get_chars()
 
+    def __int__(self):
+        """Integer representation of this term (if it stores an integer)."""
+        return self.get_integer()
+
+    def __float__(self):
+        """Float representation of this term (if it stores a float)."""
+        return self.get_float()
+
     def __deepcopy__(self):
         """Creates a new Prolog term, copied from the old."""
         return self._from_handle(handle=PL_copy_term_ref(self._handle))
