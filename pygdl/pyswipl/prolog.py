@@ -102,6 +102,7 @@ from .core import (
     atom_t,
     functor_t,
     module_t,
+    state as prolog_state,
     term_t,
 )
 
@@ -742,7 +743,8 @@ class Atom(HandleWrapper):
         return 'Atom(name={name})'.format(name=self.get_name())
 
     def __del__(self):
-        PL_unregister_atom(self._handle)
+        if prolog_state.is_available:
+            PL_unregister_atom(self._handle)
 
     def __copy__(self):
         """A new `Atom` object pointing to the same atom."""

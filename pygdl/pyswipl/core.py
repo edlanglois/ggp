@@ -1494,25 +1494,11 @@ Sclose.argtypes = [POINTER(IOSTREAM)]
 PL_unify_stream = _lib.PL_unify_stream
 PL_unify_stream.argtypes = [term_t, POINTER(IOSTREAM)]
 
-# create an exit hook which captures the exit code for our cleanup function
 
-
-class ExitHook(object):
-
-    def __init__(self):
-        self.exit_code = None
-        self.exception = None
-
-    def hook(self):
-        self._orig_exit = sys.exit
-        sys.exit = self.exit
-
-    def exit(self, code=0):
-        self.exit_code = code
-        self._orig_exit(code)
-
-_hook = ExitHook()
-_hook.hook()
+class _State(object):
+    """Module state."""
+    is_available = False  # True if prolog engine is initialized
+state = _State()
 
 
 class PrologError(Exception):
@@ -1543,4 +1529,13 @@ def _initialize():
         "call(Goal))).".encode(), swipl_load)
     PL_call(swipl_load, None)
     PL_discard_foreign_frame(swipl_fid)
+    global state
+    state.is_available = True
+
 _initialize()
+
+
+@atexit.register
+def cleanup_prolog():
+    global state
+    state.is_available = False
