@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec nosetests --with-process-isolation --with-process-isolation-individual "$@"

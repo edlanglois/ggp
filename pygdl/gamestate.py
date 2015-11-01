@@ -18,11 +18,13 @@ from pygdl.paths import prolog_dir
 
 logger = logging.getLogger(__name__)
 
+# Read in game state rules
+consult(os.path.join(prolog_dir, 'ggp_state.pl'))
+
 
 class GeneralGameManager(object):
     """Manage game descriptions using SWI-Prolog"""
 
-    _ggp_state_prolog_file = os.path.join(prolog_dir, 'ggp_state.pl')
     _ggp_state = Module(Atom('ggp_state'))
     _game_id_predicate = Predicate(functor=Functor(Atom('game_id'), 1),
                                    module=_ggp_state)
@@ -37,7 +39,6 @@ class GeneralGameManager(object):
         super().__init__()
 
         self._logger = logging.getLogger(__name__ + self.__class__.__name__)
-        consult(self._ggp_state_prolog_file)
 
     def game_exists(self, game_id):
         """Return true if a game with id game_id has been created."""
