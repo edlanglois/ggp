@@ -857,12 +857,8 @@ class Predicate(HandleWrapper):
             self._handle,
             arguments.head._handle))
 
-        if not success:
-            exception_term = PL_exception(self._handle)
-            if exception_term:
-                raise PrologException(Term._from_handle(exception_term))
-            if check:
-                raise CallError()
+        if check and not success:
+            raise CallError()
         return success
 
     # TODO: Predicate info method
