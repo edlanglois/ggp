@@ -61,7 +61,7 @@ class GeneralGameManager(object):
         return Atom(role)
 
     @staticmethod
-    def game_state_term_single(game_id, game_state, query):
+    def _game_state_term_single(game_id, game_state, query):
         """Construct a term representing a fact about a game state.
 
         Args:
@@ -76,7 +76,7 @@ class GeneralGameManager(object):
                                       game_id, game_state, query)
 
     @staticmethod
-    def game_state_term(game_id, game_state, *queries):
+    def _game_state_term(game_id, game_state, *queries):
         """Construct a term representing one or more facts about a game state.
 
         Args:
@@ -89,16 +89,16 @@ class GeneralGameManager(object):
         """
         assert queries
         if len(queries) == 1:
-            GeneralGameManager.game_state_term_single(
+            GeneralGameManager._game_state_term_single(
                 game_id, game_state, queries[0])
         else:
             return make_and_term(*(
-                GeneralGameManager.game_state_term_single(
+                GeneralGameManager._game_state_term_single(
                     game_id, game_state, query)
                 for query in queries))
 
     @staticmethod
-    def game_state_query_single(game_id, game_state, query):
+    def _game_state_query_single(game_id, game_state, query):
         """Construct a query of a game state fact.
 
         Args:
@@ -117,7 +117,7 @@ class GeneralGameManager(object):
                      arguments=args)
 
     @staticmethod
-    def game_state_query(game_id, game_state, *queries):
+    def _game_state_query(game_id, game_state, *queries):
         """Construct a query of one or more game state facts.
 
         Args:
@@ -130,13 +130,13 @@ class GeneralGameManager(object):
         """
         assert queries
         if len(queries) == 1:
-            return GeneralGameManager.game_state_query_single(
+            return GeneralGameManager._game_state_query_single(
                 game_id, game_state, queries[0])
         else:
             args = TermList(2)
-            args[0].put_term(GeneralGameManager.game_state_term_single(
+            args[0].put_term(GeneralGameManager._game_state_term_single(
                 game_id, game_state, queries[0]))
-            args[1].put_term(GeneralGameManager.game_state_term(
+            args[1].put_term(GeneralGameManager._game_state_term(
                 game_id, game_state, queries[1:]))
             return Query(predicate=GeneralGameManager._and_predicate,
                          args=args)
@@ -163,7 +163,7 @@ class GeneralGame(object):
         role_query_term = Term.from_functor(self._role_functor)
         role_variable = role_query_term[0]
 
-        with self.stateless_query(role_query_term) as q:
+        with self._stateless_query(role_query_term) as q:
             while q.next_solution():
                 yield role_variable.get_atom()
 
@@ -182,7 +182,7 @@ class GeneralGame(object):
         input_query_term[0].put_atom(role)
         move_variable = input_query_term[1]
 
-        with self.stateless_query(input_query_term) as q:
+        with self._stateless_query(input_query_term) as q:
             while q.next_solution():
                 yield copy.deepcopy(move_variable)
 
@@ -191,7 +191,7 @@ class GeneralGame(object):
         base_query_term = Term.from_functor(self._base_functor)
         base_variable = base_query_term[0]
 
-        with self.stateless_query(base_query_term) as q:
+        with self._stateless_query(base_query_term) as q:
             while q.next_solution():
                 yield copy.deepcopy(base_variable)
 
@@ -206,17 +206,18 @@ class GeneralGame(object):
     def role_object(self, role):
         return self.game_manager.role_object(role)
 
-    def stateless_query_term(self, *queries):
-        return self.stateful_query_term(self._empty_game_state_term, *queries)
+    def _stateless_query_term(self, *queries):
+        return self._stateful_query_term(self._empty_game_state_term, *queries)
 
-    def stateful_query_term(self, state, *queries):
-        return self.game_manager.game_state_term(self.game_id, state, *queries)
+    def _stateful_query_term(self, state, *queries):
+        return self.game_manager._game_state_term(self.game_id, state, *queries)
 
-    def stateless_query(self, *queries):
-        return self.stateful_query(self._empty_game_state_term, *queries)
+    def _stateless_query(self, *queries):
+        return self._stateful_query(self._empty_game_state_term, *queries)
 
-    def stateful_query(self, state, *queries):
-        return self.game_manager.game_state_query(self.game_id, state, *queries)
+    def _stateful_query(self, state, *queries):
+        return self.game_manager._game_state_query(
+            self.game_id, state, *queries)
 
 
 class GeneralGameState(object):
@@ -282,7 +283,7 @@ class GeneralGameState(object):
         utility = Term()
         utility_query = Term.from_cons_functor(
             self._goal_functor, Term.from_atom(role), utility)
-        self.query_term(utility_query)(check=True)
+        self._query_term(utility_query)(check=True)
         return int(utility)
 
     def legal_moves(self, role):
@@ -290,7 +291,7 @@ class GeneralGameState(object):
         move = Term()
         move_query = Term.from_cons_functor(
             self._legal_functor, Term.from_atom(role), move)
-        with self.query(move_query) as q:
+        with self._query(move_query) as q:
             while q.next_solution():
                 yield copy.deepcopy(move)
 
@@ -301,13 +302,13 @@ class GeneralGameState(object):
             self._base_functor, state_term)
         true_term_query = Term.from_cons_functor(
             self._true_functor, state_term)
-        with self.query(base_term_query, true_term_query) as q:
+        with self._query(base_term_query, true_term_query) as q:
             while q.next_solution():
                 yield copy.deepcopy(state_term)
 
     def is_terminal(self):
         """True if the current game state is terminal."""
-        return self.query_term(Term.from_atom(self._terminal_atom))
+        return self._query_term(Term.from_atom(self._terminal_atom))
 
     def apply_moves(self, moves):
         """A new game state representing the game after moves are applied.
@@ -346,8 +347,8 @@ class GeneralGameState(object):
             self._final_truth_state_functor,
             new_truth_history, new_truth_state)
 
-        self.query(prepare_moves_query, move_history_query, truth_history_query,
-                   truth_state_query)(check=True)
+        self._query(prepare_moves_query, move_history_query,
+                    truth_history_query, truth_state_query)(check=True)
 
         return GeneralGameState(
             game=self.game,
@@ -356,14 +357,14 @@ class GeneralGameState(object):
             truth_state=new_truth_state,
         )
 
-    def query_term(self, *queries):
-        return self.game.stateful_query_term(self.truth_state, *queries)
-
-    def query(self, *queries):
-        return self.game.stateful_query(self.truth_state, *queries)
-
     def game_id(self):
         return self.game.game_id
 
     def role_object(self, role):
         return self.game.role_object(role)
+
+    def _query_term(self, *queries):
+        return self.game._stateful_query_term(self.truth_state, *queries)
+
+    def _query(self, *queries):
+        return self.game._stateful_query(self.truth_state, *queries)
