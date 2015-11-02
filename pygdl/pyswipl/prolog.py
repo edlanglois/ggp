@@ -82,6 +82,7 @@ from .core import (
     PL_open_query,
     PL_pred,
     PL_predicate,
+    PL_predicate_info,
     PL_put_atom,
     PL_put_atom_nchars,
     PL_put_bool,
@@ -143,6 +144,9 @@ class PrologException(Exception):
     def __str__(self):
         return "Prolog Exception:\n{!s}".format(self.exception_term)
 
+    def __repr__(self):
+        return 'PrologException({!r})'.format(self.exception_term)
+
 
 class CallError(Exception):
     """A call failed."""
@@ -156,6 +160,16 @@ class HandleWrapper(object):
     @classmethod
     def _from_handle(cls, handle):
         """Initialize from an existing handle."""
+        if handle is None:
+            # When the handle truly is 0, ctypes interprets the value as None.
+            # Undo the mistake here.
+            # Unfortunately, this means we can't warn about None being passed
+            # when it's an error.
+            handle = 0
+
+        if not isinstance(handle, int):
+            raise ValueError('Handle must be an int, not {}'.format(
+                type(handle).__name__))
         new_obj = cls.__new__(cls)
         HandleWrapper.__init__(new_obj, handle=handle)
         return new_obj
@@ -169,6 +183,12 @@ class Term(HandleWrapper):
     def __str__(self):
         """A Prolog string representing this term."""
         return self.get_chars()
+
+    def __repr__(self):
+        return 'Term(handle={handle!r}, type={type!r}, value={value!r})'.format(
+            handle=self._handle,
+            type=self.type(),
+            value=self.get_chars())
 
     def __int__(self):
         """Integer representation of this term (if it stores an integer)."""
@@ -583,8 +603,18 @@ class Term(HandleWrapper):
     def put_functor(self, functor):
         """Put a compound term created from functor in this term.
 
-        The arguments of the compound term are variables.
-        To create a term with instantiated arguments, use `put_cons_functor`.
+        The arguments of the compound term are __TEMPORARY__ variables.
+        To create a term with instantiated arguments or with persistent
+        variables, use `put_cons_functor`.
+
+        WARNING
+        -------
+        The arguments of the returned compound term are not persistent.
+        References to the arguments (e.g. using `get_arg` or `__getitem__`)
+        may be invalidated by the prolog system after other API calls.
+
+        Either use `put_cons_functor` or get a new reference to the arguments
+        each time they are needed.
         """
         self._require_success(
             PL_put_functor(self._handle, functor._handle))
@@ -643,7 +673,7 @@ class Term(HandleWrapper):
         self._require_success(
             PL_cons_functor_v(self._handle,
                               functor._handle,
-                              args.head._handle))
+                              args._handle))
 
     def put_cons_list(self, head, tail):
         """Set this term to a list constructed from head and tail."""
@@ -700,21 +730,29 @@ for put_method_name in dir(Term):
     _add_from_method_to_class(Term, put_method_name, put_method)
 
 
-class TermList(object):
+class TermList(HandleWrapper):
     """A collection of term references.
 
     Required by `Term.cons_functor_v` and `Query`.
     """
     def __init__(self, length):
         self._length = length
-        self.head = Term._from_handle(handle=PL_new_term_refs(length))
+        super(TermList, self).__init__(handle=PL_new_term_refs(length))
+
+    def __str__(self):
+        return str(list(self))
+
+    def __repr__(self):
+        return 'TermList(handle={handle!r}, length={length!r})'.format(
+            handle=self._handle,
+            length=self._length)
 
     def __len__(self):
         return self._length
 
     def __getitem__(self, key):
-        if isinstance(key, int) and key >= 0 and key <= self._length:
-            return Term._from_handle(self.head._handle + key)
+        if isinstance(key, int) and key >= 0 and key < self._length:
+            return Term._from_handle(self._handle + key)
         else:
             raise IndexError()
 
@@ -732,15 +770,11 @@ class Atom(HandleWrapper):
         PL_register_atom(new_atom._handle)
         return new_atom
 
-    def get_name(self):
-        """The atom's name as a string."""
-        return PL_atom_chars(self._handle).decode()
-
     def __str__(self):
         return self.get_name()
 
     def __repr__(self):
-        return 'Atom(name={name})'.format(name=self.get_name())
+        return 'Atom(name={name!r})'.format(name=self.get_name())
 
     def __del__(self):
         if prolog_state.is_available:
@@ -749,6 +783,10 @@ class Atom(HandleWrapper):
     def __copy__(self):
         """A new `Atom` object pointing to the same atom."""
         return self._from_handle(self._handle)
+
+    def get_name(self):
+        """The atom's name as a string."""
+        return PL_atom_chars(self._handle).decode()
 
 
 class Functor(HandleWrapper):
@@ -774,7 +812,7 @@ class Functor(HandleWrapper):
                                        arity=self.get_arity())
 
     def __repr__(self):
-        return "Functor(name={name}, arity={arity})".format(
+        return "Functor(name={name!r}, arity={arity!r})".format(
             name=self.get_name(), arity=self.get_arity())
 
     def get_name(self):
@@ -795,6 +833,12 @@ class Module(HandleWrapper):
             name (Atom): Name of the module.
         """
         super(Module, self).__init__(handle=PL_new_module(name._handle))
+
+    def __str__(self):
+        return str(self.get_name())
+
+    def __repr__(self):
+        return 'Module(name={name!r})'.format(name=self.get_name())
 
     @classmethod
     def current_context(cls):
@@ -831,6 +875,20 @@ class Predicate(HandleWrapper):
         """
         return cls._from_handle(handle=PL_predicate(name, arity, module_name))
 
+    def __str__(self):
+        info = self.get_info()
+        return '{module_prefix}{name}/{arity}'.format(
+            module_prefix=(str(info.module) + ':'
+                           if info.module is not None else ''),
+            name=info.name,
+            arity=info.arity)
+
+    def __repr__(self):
+        info = self.get_info()
+        return 'Predicate(functor={functor!r}, module={module!r})'.format(
+            functor=Functor(name=info.name, arity=info.arity),
+            module=info.module)
+
     def __call__(self, arguments, goal_context_module=None, check=False):
         """Call predicate with arguments.
 
@@ -851,17 +909,51 @@ class Predicate(HandleWrapper):
             PrologException: If an exception was raised in Prolog.
             CallError      : If the call failed and `check` is ``True``.
         """
+        self.check_argument_match(arguments)
         success = bool(PL_call_predicate(
             _get_nullable_handle(goal_context_module),
             PL_Q_NODEBUG | PL_Q_CATCH_EXCEPTION,
             self._handle,
-            arguments.head._handle))
+            arguments._handle))
 
         if check and not success:
             raise CallError()
         return success
 
-    # TODO: Predicate info method
+    Info = namedtuple('Info', ['name', 'arity', 'module'])
+
+    def get_info(self):
+        """Returns name, arity, and module of this predicate (`Predicate.Info`)
+        """
+        name = atom_t()
+        arity = c_int()
+        module = module_t()
+        PL_predicate_info(self._handle,
+                          byref(name), byref(arity), byref(module))
+        return self.Info(name=(Atom._from_handle(name.value)
+                               if name.value is not None else None),
+                         arity=arity.value,
+                         module=(Module._from_handle(module.value)
+                                 if module.value is not None else None))
+
+    def check_argument_match(self, arguments):
+        """Check that the right number of arguments are given.
+
+        Args:
+            arguments (TermList) : List of arguments.
+
+        Raises:
+            ValueError : If the number of arguments does not match
+                the predicate's arity.
+        """
+        number_of_arguments = len(arguments)
+        arity = self.get_info().arity
+        if number_of_arguments != arity:
+            raise ValueError(
+                ('number of arguments ({nargs}) does not match '
+                 'predicate arity ({arity})').format(
+                     nargs=number_of_arguments,
+                     arity=arity))
 
 
 class Query(object):
@@ -887,6 +979,7 @@ class Query(object):
         Only one query can be active at a time, but the query is not activated
         until `__enter__` is called.
         """
+        predicate.check_argument_match(arguments)
         self.predicate = predicate
         self.arguments = arguments
         self.goal_context_module = goal_context_module
@@ -902,6 +995,18 @@ class Query(object):
     def __exit__(self, type, value, traceback):
         self.active_query.close()
 
+    def __str__(self):
+        return '{pred}({args})'.format(
+            pred=str(self.predicate).rsplit('/', 1)[0],
+            args=', '.join(str(arg) for arg in self.arguments))
+
+    def __repr__(self):
+        return ('Query(predicate={predicate!r}, arguments={arguments!r}, '
+                'goal_context_module={goal_context_module!r})').format(
+                    predicate=self.predicate,
+                    arguments=self.arguments,
+                    goal_context_module=self.goal_context_module)
+
 
 class ActiveQuery(HandleWrapper):
     """Interface to an active Prolog Query.
@@ -911,12 +1016,13 @@ class ActiveQuery(HandleWrapper):
     def __init__(self, predicate, arguments, goal_context_module=None):
         """Create an active query. Arguments are the same as `Query.__init__`.
         """
+        predicate.check_argument_match(arguments)
         super(ActiveQuery, self).__init__(
             handle=PL_open_query(
                 _get_nullable_handle(goal_context_module),
                 PL_Q_NODEBUG | PL_Q_CATCH_EXCEPTION,
                 predicate._handle,
-                arguments.head._handle))
+                arguments._handle))
 
     def next_solution(self):
         """Find the next solution, updating `arguments`.

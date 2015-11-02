@@ -659,7 +659,8 @@ PL_predicate.restype = predicate_t
 #                                            atom_t *name, int *arity,
 #                                            module_t *module);
 PL_predicate_info = _lib.PL_predicate_info
-PL_predicate_info.argtypes = [predicate_t, atom_t, c_int, module_t]
+PL_predicate_info.argtypes = [predicate_t, POINTER(atom_t), POINTER(c_int),
+                              POINTER(module_t)]
 PL_predicate_info.restype = c_int
 
 #                         /* Call-back */
