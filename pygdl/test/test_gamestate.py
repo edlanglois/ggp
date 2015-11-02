@@ -2,7 +2,7 @@ import faulthandler
 import os.path
 import os
 
-from nose.tools import assert_is_instance
+from nose.tools import assert_is_instance, assert_equal
 import nosepipe
 
 from pygdl.gamestate import (
@@ -52,3 +52,6 @@ class TestGeneralGame():
 
     def test_initial_state(self):
         assert_is_instance(self.game.initial_state(), GeneralGameState)
+
+    def test_roles(self):
+        assert_equal([str(role) for role in self.game.roles()], ['robot'])
