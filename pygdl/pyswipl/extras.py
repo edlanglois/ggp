@@ -23,7 +23,7 @@ def make_and_term(*terms):
     combined_term = terms[-1]
     for term in reversed(terms[:-1]):
         combined_term = Term.from_cons_functor(
-            and_functor, terms.pop(), combined_term)
+            and_functor, term, combined_term)
     return combined_term
 
 

@@ -73,7 +73,7 @@ class GeneralGameManager(object):
         Returns:
             prolog.Term:
         """
-        return Term.from_cons_functor(GeneralGameManager.game_state_functor,
+        return Term.from_cons_functor(GeneralGameManager._game_state_functor,
                                       game_id, game_state, query)
 
     @staticmethod
@@ -90,7 +90,7 @@ class GeneralGameManager(object):
         """
         assert queries
         if len(queries) == 1:
-            GeneralGameManager._game_state_term_single(
+            return GeneralGameManager._game_state_term_single(
                 game_id, game_state, queries[0])
         else:
             return make_and_term(*(
@@ -138,9 +138,9 @@ class GeneralGameManager(object):
             args[0].put_term(GeneralGameManager._game_state_term_single(
                 game_id, game_state, queries[0]))
             args[1].put_term(GeneralGameManager._game_state_term(
-                game_id, game_state, queries[1:]))
+                game_id, game_state, *queries[1:]))
             return Query(predicate=GeneralGameManager._and_predicate,
-                         args=args)
+                         arguments=args)
 
 
 class GeneralGame(object):
@@ -209,6 +209,9 @@ class GeneralGame(object):
     def role_object(self, role):
         return self.game_manager.role_object(role)
 
+    def action_object(self, action):
+        return Term.from_parsed(action)
+
     def _stateless_query_term(self, *queries):
         return self._stateful_query_term(self._empty_game_state_term, *queries)
 
@@ -236,14 +239,18 @@ class GeneralGameState(object):
     _legal_functor = Functor(Atom('legal'), 2)
     _prepare_moves_functor = Functor(Atom('prepare_moves'), 3)
     _true_functor = Functor(Atom('true'), 1)
-    _truth_history_functor = Functor(Atom('truth_history'), 3)
+    _truth_history_3_functor = Functor(Atom('truth_history'), 3)
+    _truth_history_4_functor = Functor(Atom('truth_history'), 4)
 
     _final_truth_state_predicate = Predicate(
         functor=_final_truth_state_functor,
         module=GeneralGameManager._ggp_state)
     _length_predicate = Predicate(functor=Functor(Atom('length'), 2))
-    _truth_history_predicate = Predicate(
-        functor=_truth_history_functor,
+    _truth_history_3_predicate = Predicate(
+        functor=_truth_history_3_functor,
+        module=GeneralGameManager._ggp_state)
+    _truth_history_4_predicate = Predicate(
+        functor=_truth_history_4_functor,
         module=GeneralGameManager._ggp_state)
 
     def __init__(self, game,
@@ -261,7 +268,7 @@ class GeneralGameState(object):
             args = TermList(3)
             args[0].put_term(self.game_id())
             args[1].put_term(self.move_history)
-            self._truth_history_predicate(args, check=True)
+            self._truth_history_3_predicate(args, check=True)
             self.truth_history = Term.from_term(args[2])
         else:
             self.truth_history = truth_history
@@ -287,7 +294,10 @@ class GeneralGameState(object):
         utility_query = Term.from_cons_functor(
             self._goal_functor, Term.from_atom(role), utility)
         self._query_term(utility_query)(check=True)
-        return int(utility)
+        if utility.is_atom():
+            return int(str(utility))
+        else:
+            return int(utility)
 
     def legal_moves(self, role):
         """An iterator of legal moves for role in the current state."""
@@ -311,7 +321,7 @@ class GeneralGameState(object):
 
     def is_terminal(self):
         """True if the current game state is terminal."""
-        return self._query_term(Term.from_atom(self._terminal_atom))
+        return self._query_term(Term.from_atom(self._terminal_atom))()
 
     def apply_moves(self, moves):
         """A new game state representing the game after moves are applied.
@@ -320,7 +330,7 @@ class GeneralGameState(object):
         `moves` is a dictionary of role => move.
         """
         moves_term = make_list_term(*(
-            Term.from_cons_functor(self._does_term,
+            Term.from_cons_functor(self._does_functor,
                                    Term.from_atom(role), action)
             for (role, action) in moves.items()))
 
@@ -340,7 +350,7 @@ class GeneralGameState(object):
         #               NewTruthHistory)
         new_truth_history = Term()
         truth_history_query = Term.from_cons_functor(
-            self._truth_history_functor,
+            self._truth_history_4_functor,
             self.game_id(), new_move_history, self.truth_history,
             new_truth_history)
 
@@ -350,8 +360,13 @@ class GeneralGameState(object):
             self._final_truth_state_functor,
             new_truth_history, new_truth_state)
 
-        self._query(prepare_moves_query, move_history_query,
-                    truth_history_query, truth_state_query)(check=True)
+        print(prepare_moves_query)
+        print(move_history_query)
+        print(truth_history_query)
+        print(truth_state_query)
+        self._query_term(
+            prepare_moves_query, move_history_query,
+            truth_history_query, truth_state_query)(check=True)
 
         return GeneralGameState(
             game=self.game,

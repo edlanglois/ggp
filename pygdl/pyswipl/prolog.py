@@ -150,7 +150,11 @@ class PrologException(Exception):
 
 class CallError(Exception):
     """A call failed."""
-    pass
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __str__(self):
+        return str(self.msg)
 
 
 class HandleWrapper(object):
@@ -173,6 +177,21 @@ class HandleWrapper(object):
         new_obj = cls.__new__(cls)
         HandleWrapper.__init__(new_obj, handle=handle)
         return new_obj
+
+    def __eq__(self, other):
+        return type(self) == type(other) and self._handle == other._handle
+
+    def __ne__(self, other):
+        return not self == other
+
+
+class ConstantHandleToConstantMixIn(object):
+    """`HandleWrapper` mixin where `_handle` is constant and refers to a
+    constant object.
+
+    """
+    def __hash__(self):
+        return hash(self._handle)
 
 
 class Term(HandleWrapper):
@@ -198,7 +217,7 @@ class Term(HandleWrapper):
         """Float representation of this term (if it stores a float)."""
         return self.get_float()
 
-    def __deepcopy__(self):
+    def __deepcopy__(self, memo):
         """Creates a new Prolog term, copied from the old."""
         return self._from_handle(handle=PL_copy_term_ref(self._handle))
 
@@ -334,7 +353,7 @@ class Term(HandleWrapper):
             if len(required_types) == 1:
                 type_str = required_types[0]
             elif len(required_types) == 2:
-                type_str == '{} or {}'.format(*required_types)
+                type_str = '{} or {}'.format(*required_types)
             else:
                 type_str = '{}, or {}'.format(
                     ', '.join(required_types[:-1],),
@@ -656,6 +675,13 @@ class Term(HandleWrapper):
 
         The length of `args` must be the same as the arity of `functor`.
         """
+        functor_arity = functor.get_arity()
+        if functor_arity != len(args):
+            raise TypeError(
+                ('Functor arity ({arity}) does not match '
+                 'number of arguments ({nargs}).').format(
+                     arity=functor_arity, nargs=len(args)))
+
         if not all(isinstance(arg, Term) for arg in args):
             raise TypeError(
                 'All arguments after `functor` must be `Term` objects.')
@@ -699,7 +725,7 @@ class Term(HandleWrapper):
         success = bool(PL_call(self._handle,
                                _get_nullable_handle(context_module)))
         if check and not success:
-            raise CallError()
+            raise CallError(str(self))
         return success
 
 
@@ -738,6 +764,10 @@ class TermList(HandleWrapper):
     def __init__(self, length):
         self._length = length
         super(TermList, self).__init__(handle=PL_new_term_refs(length))
+
+    def __eq__(self, other):
+        return (super(TermList, self).__eq__(other) and
+                self._length == other._length)
 
     def __str__(self):
         return str(list(self))
@@ -784,12 +814,20 @@ class Atom(HandleWrapper):
         """A new `Atom` object pointing to the same atom."""
         return self._from_handle(self._handle)
 
+    def __eq__(self, other):
+        # Atoms can be deleted and the handles re-assigned so check name instead
+        # of handle.
+        return type(self) == type(other) and self.get_name() == other.get_name()
+
+    def __hash__(self):
+        return hash(self.get_name())
+
     def get_name(self):
         """The atom's name as a string."""
         return PL_atom_chars(self._handle).decode()
 
 
-class Functor(HandleWrapper):
+class Functor(HandleWrapper, ConstantHandleToConstantMixIn):
     """Prolog Functor Interface"""
     def __init__(self, name, arity):
         """Create a functor.
@@ -824,7 +862,7 @@ class Functor(HandleWrapper):
         return PL_functor_arity(self._handle)
 
 
-class Module(HandleWrapper):
+class Module(HandleWrapper, ConstantHandleToConstantMixIn):
     """Prolog Module Interface"""
     def __init__(self, name):
         """Finds existing module or creates a new module with given name.
@@ -850,7 +888,7 @@ class Module(HandleWrapper):
         return Atom._from_handle(PL_module_name(self._handle))
 
 
-class Predicate(HandleWrapper):
+class Predicate(HandleWrapper, ConstantHandleToConstantMixIn):
     """Prolog Predicate Interface"""
     def __init__(self, functor, module=None):
         """Create a predicate from a functor.
@@ -917,7 +955,7 @@ class Predicate(HandleWrapper):
             arguments._handle))
 
         if check and not success:
-            raise CallError()
+            raise CallError(str(self))
         return success
 
     Info = namedtuple('Info', ['name', 'arity', 'module'])
