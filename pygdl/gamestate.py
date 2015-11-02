@@ -43,7 +43,7 @@ class GeneralGameManager(object):
     def game_exists(self, game_id):
         """Return true if a game with id game_id has been created."""
         args = TermList(1)
-        args.head.put_atom_name(game_id)
+        args[0].put_atom_name(game_id)
         return self._game_id_predicate(args)
 
     def create_game(self, game_id, rules):
@@ -111,10 +111,10 @@ class GeneralGameManager(object):
             prolog.Query:
         """
         args = TermList(3)
-        args[0].put_term(game_state)
-        args[1].put_term(game_id)
+        args[0].put_term(game_id)
+        args[1].put_term(game_state)
         args[2].put_term(query)
-        return Query(predicate=GeneralGameManager._game_id_predicate,
+        return Query(predicate=GeneralGameManager._game_state_predicate,
                      arguments=args)
 
     @staticmethod
@@ -161,8 +161,9 @@ class GeneralGame(object):
 
     def roles(self):
         """An iterator of the game roles (each a PrologTerm)"""
-        role_query_term = Term.from_functor(self._role_functor)
-        role_variable = role_query_term[0]
+        role_variable = Term()
+        role_query_term = Term.from_cons_functor(
+            self._role_functor, role_variable)
 
         with self._stateless_query(role_query_term) as q:
             while q.next_solution():
@@ -179,9 +180,9 @@ class GeneralGame(object):
         It is an iterator of all moves which may be available to role at some
         time in the game.
         """
-        input_query_term = Term.from_functor(self._input_functor)
-        input_query_term[0].put_atom(role)
-        move_variable = input_query_term[1]
+        move_variable = Term()
+        input_query_term = Term.from_cons_functor(
+            self._input_functor, Term.from_atom(role), move_variable)
 
         with self._stateless_query(input_query_term) as q:
             while q.next_solution():
@@ -189,8 +190,9 @@ class GeneralGame(object):
 
     def base_terms(self):
         """A list of the terms which define the game state."""
-        base_query_term = Term.from_functor(self._base_functor)
-        base_variable = base_query_term[0]
+        base_variable = Term()
+        base_query_term = Term.from_cons_functor(
+            self._base_functor, base_variable)
 
         with self._stateless_query(base_query_term) as q:
             while q.next_solution():
