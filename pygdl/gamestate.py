@@ -360,13 +360,8 @@ class GeneralGameState(object):
             self._final_truth_state_functor,
             new_truth_history, new_truth_state)
 
-        print(prepare_moves_query)
-        print(move_history_query)
-        print(truth_history_query)
-        print(truth_state_query)
-        self._query_term(
-            prepare_moves_query, move_history_query,
-            truth_history_query, truth_state_query)(check=True)
+        make_and_term(prepare_moves_query, move_history_query,
+                      truth_history_query, truth_state_query)(check=True)
 
         return GeneralGameState(
             game=self.game,
