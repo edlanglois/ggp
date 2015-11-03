@@ -173,20 +173,20 @@ class GeneralGame(object):
         """The number of roles in the game."""
         return len(set(self.roles()))
 
-    def all_moves(self, role):
-        """All possible moves for role in this game.
+    def all_actions(self, role):
+        """All possible actions for role in this game.
 
-        This does not represent the legal moves in some state.
-        It is an iterator of all moves which may be available to role at some
+        This does not represent the legal actions in some state.
+        It is an iterator of all actions which may be available to role at some
         time in the game.
         """
-        move_variable = Term()
+        action_variable = Term()
         input_query_term = Term.from_cons_functor(
-            self._input_functor, Term.from_atom(role), move_variable)
+            self._input_functor, Term.from_atom(role), action_variable)
 
         with self._stateless_query(input_query_term) as q:
             while q.next_solution():
-                yield copy.deepcopy(move_variable)
+                yield copy.deepcopy(action_variable)
 
     def base_terms(self):
         """A list of the terms which define the game state."""
@@ -299,14 +299,14 @@ class GeneralGameState(object):
         else:
             return int(utility)
 
-    def legal_moves(self, role):
-        """An iterator of legal moves for role in the current state."""
-        move = Term()
-        move_query = Term.from_cons_functor(
-            self._legal_functor, Term.from_atom(role), move)
-        with self._query(move_query) as q:
+    def legal_actions(self, role):
+        """An iterator of legal actions for role in the current state."""
+        action = Term()
+        action_query = Term.from_cons_functor(
+            self._legal_functor, Term.from_atom(role), action)
+        with self._query(action_query) as q:
             while q.next_solution():
-                yield copy.deepcopy(move)
+                yield copy.deepcopy(action)
 
     def state_terms(self):
         """Iterator of the base terms that are true for this state."""
@@ -327,7 +327,7 @@ class GeneralGameState(object):
         """A new game state representing the game after moves are applied.
 
         Returns a new state, this state is unchanged.
-        `moves` is a dictionary of role => move.
+        `moves` is a dictionary of role => action.
         """
         moves_term = make_list_term(*(
             Term.from_cons_functor(self._does_functor,

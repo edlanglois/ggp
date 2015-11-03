@@ -1,10 +1,13 @@
 import faulthandler
-import os.path
+import itertools
 import os
+import os.path
 
 from nose.tools import (
     assert_equal,
+    assert_false,
     assert_is_instance,
+    assert_true,
 )
 import nosepipe
 
@@ -90,18 +93,18 @@ class BaseTestGeneralGame(object):
         for role in self.roles:
             role_object = self.game.role_object(role)
             assert_equal(str(role_object), role)
-            list(self.game.all_moves(role_object))
+            list(self.game.all_actions(role_object))
 
     def test_action_object(self):
         action = next(iter(next(iter(self.actions.values()))))
         action_object = self.game.action_object(action)
         assert_equal(str(action_object), action)
 
-    def test_all_moves(self):
+    def test_all_actions(self):
         for role in self.roles:
             role_object = self.game.role_object(role)
             assert_equal(
-                {str(move) for move in self.game.all_moves(role_object)},
+                {str(move) for move in self.game.all_actions(role_object)},
                 self.actions[role])
 
     def test_base_terms(self):
@@ -136,8 +139,9 @@ class TestGeneralGameTicTacToe(BaseTestGeneralGame):
                      for i in range(1, 4) for j in range(1, 4)},
             base_terms=(
                 {'step({})'.format(i) for i in range(1, 8)}.union(
-                {'cell({},{},{})'.format(i, j, x)
-                 for i in range(1, 4) for j in range(1, 4) for x in 'xob'})))
+                    {'cell({},{},{})'.format(i, j, x)
+                     for i in range(1, 4) for j in range(1, 4) for x in 'xob'}))
+        )
 
 
 class TestGeneralGameStateButtonsAndLights(object):
@@ -153,9 +157,9 @@ class TestGeneralGameStateButtonsAndLights(object):
     def test_utility(self):
         assert_equal(self.initial_state.utility(self.role), 0)
 
-    def test_legal_moves(self):
+    def test_legal_actions(self):
         assert_equal(
-            {str(move) for move in self.initial_state.legal_moves(self.role)},
+            {str(move) for move in self.initial_state.legal_actions(self.role)},
             {'a', 'b', 'c'})
 
     def test_state_terms(self):
@@ -164,7 +168,7 @@ class TestGeneralGameStateButtonsAndLights(object):
             {'1'})
 
     def test_is_terminal(self):
-        assert_equal(self.initial_state.is_terminal(), False)
+        assert_false(self.initial_state.is_terminal())
 
     def test_game_id(self):
         assert_equal(str(self.initial_state.game_id()), 'buttonsandlights')
@@ -176,12 +180,12 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(new_state.turn_number(), 1)
         assert_equal(new_state.utility(self.role), 0)
         assert_equal(
-            {str(move) for move in new_state.legal_moves(self.role)},
+            {str(move) for move in new_state.legal_actions(self.role)},
             {'a', 'b', 'c'})
         assert_equal(
             {str(term) for term in new_state.state_terms()},
             {'2', 'p'})
-        assert_equal(new_state.is_terminal(), False)
+        assert_false(new_state.is_terminal())
 
     def test_apply_moves_check_initial(self):
         action = self.game.action_object('a')
@@ -191,12 +195,12 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(self.initial_state.turn_number(), 0)
         assert_equal(self.initial_state.utility(self.role), 0)
         assert_equal(
-            {str(move) for move in self.initial_state.legal_moves(self.role)},
+            {str(move) for move in self.initial_state.legal_actions(self.role)},
             {'a', 'b', 'c'})
         assert_equal(
             {str(term) for term in self.initial_state.state_terms()},
             {'1'})
-        assert_equal(self.initial_state.is_terminal(), False)
+        assert_false(self.initial_state.is_terminal())
 
     def test_apply_moves_full_game_won(self):
         a = self.game.action_object('a')
@@ -213,14 +217,14 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(final_state.turn_number(), 6)
         assert_equal(final_state.utility(self.role), 100)
         assert_equal(
-            {str(move) for move in final_state.legal_moves(self.role)},
+            {str(move) for move in final_state.legal_actions(self.role)},
             {'a', 'b', 'c'})
         assert_equal(
             {str(term) for term in final_state.state_terms()},
             {'7', 'p', 'q', 'r'})
-        assert_equal(final_state.is_terminal(), True)
+        assert_true(final_state.is_terminal())
 
-    def test_apply_moves_full_game_won(self):
+    def test_apply_moves_full_game_lost(self):
         a = self.game.action_object('a')
         b = self.game.action_object('b')
         c = self.game.action_object('c')
@@ -235,9 +239,65 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(final_state.turn_number(), 6)
         assert_equal(final_state.utility(self.role), 0)
         assert_equal(
-            {str(move) for move in final_state.legal_moves(self.role)},
+            {str(move) for move in final_state.legal_actions(self.role)},
             {'a', 'b', 'c'})
         assert_equal(
             {str(term) for term in final_state.state_terms()},
             {'7', 'p', 'r'})
-        assert_equal(final_state.is_terminal(), True)
+        assert_true(final_state.is_terminal())
+
+
+def test_play_tic_tac_toe():
+    ggm = make_game_manager('tictactoe', TIC_TAC_TOE_FILE)
+    game = ggm.game('tictactoe')
+    state0 = game.initial_state()
+
+    black = game.role_object('black')
+    white = game.role_object('white')
+    actions = {i: {j: game.action_object("mark('{}', '{}')".format(i, j))
+                   for j in range(1, 4)}
+               for i in range(1, 4)}
+    assert_equal({str(action) for action in game.all_actions(white)},
+                 set(itertools.chain(
+                     *((str(action) for action in value.values())
+                       for value in actions.values()))))
+
+    assert_equal(state0.turn_number(), 0)
+    assert_equal(state0.utility(white), 50)
+    assert_equal(state0.utility(black), 50)
+    assert_false(state0.is_terminal())
+    assert_equal({str(term) for term in state0.state_terms()},
+                 {'cell({},{},b)'.format(i, j)
+                  for i in range(1, 4) for j in range(1, 4)}.union({'step(1)'}))
+
+    state1 = state0.apply_moves({black: actions[2][2], white: actions[2][3]})
+    state2 = state1.apply_moves({black: actions[1][2], white: actions[1][3]})
+    state3 = state2.apply_moves({black: actions[2][1], white: actions[3][1]})
+
+    assert_equal(state3.turn_number(), 3)
+    assert_equal(state3.utility(white), 50)
+    assert_equal(state3.utility(black), 50)
+    assert_false(state3.is_terminal())
+    assert_equal(
+        {str(action) for action in state3.legal_actions(white)},
+        {"mark({},{})".format(i, j) for i, j in [(1, 1), (3, 2), (3, 3)]})
+
+    state4_won = state3.apply_moves({black: actions[3][2],
+                                     white: actions[1][1]})
+    assert_equal(state4_won.turn_number(), 4)
+    assert_equal(state4_won.utility(white), 0)
+    assert_equal(state4_won.utility(black), 100)
+    assert_true(state4_won.is_terminal())
+
+    state4_tie = state3.apply_moves({black: actions[3][3],
+                                     white: actions[1][1]})
+    assert_equal(state4_tie.turn_number(), 4)
+    assert_equal(state4_tie.utility(white), 50)
+    assert_equal(state4_tie.utility(black), 50)
+    assert_false(state4_tie.is_terminal())
+
+    # Make sure state4_won is still valid
+    assert_equal(state4_won.turn_number(), 4)
+    assert_equal(state4_won.utility(white), 0)
+    assert_equal(state4_won.utility(black), 100)
+    assert_true(state4_won.is_terminal())
