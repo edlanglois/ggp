@@ -329,10 +329,10 @@ class GeneralGameState(object):
         Returns a new state, this state is unchanged.
         `moves` is a dictionary of role => action.
         """
-        moves_term = make_list_term(*(
+        moves_term = make_list_term(*[
             Term.from_cons_functor(self._does_functor,
                                    Term.from_atom(role), action)
-            for (role, action) in moves.items()))
+            for (role, action) in moves.items()])
 
         # prepare_moves(game_id, moves_term, PreparedMoves)
         prepared_moves = Term()

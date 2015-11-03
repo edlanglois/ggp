@@ -105,7 +105,7 @@ class GamePlayer(object):
 class Legal(GamePlayer):
     """Plays the first legal move."""
     def get_move(self):
-        moves = self.game_state.legal_moves(self.role)
+        moves = self.game_state.legal_actions(self.role)
         first_move = next(moves)
         moves.close()
         return first_move
@@ -115,7 +115,7 @@ class Random(GamePlayer):
     """Plays a random legal move."""
     def get_move(self):
         random_move = None
-        for i, move in enumerate(self.game_state.legal_moves(self.role)):
+        for i, move in enumerate(self.game_state.legal_actions(self.role)):
             if random.randint(0, i) == 0:
                 random_move = move
 
@@ -156,7 +156,7 @@ class SimpleDepthFirstSearch(SearchPlayer):
         if game_state.is_terminal():
             return game_state.utility(self.role), tuple()
 
-        moves = tuple(game_state.legal_moves(self.role))
+        moves = tuple(game_state.legal_actions(self.role))
 
         best_score = self.MIN_SCORE - 1
         best_move_sequence = tuple()
@@ -211,13 +211,13 @@ class Minimax(SearchPlayer):
             return game_state.utility(self.role), ()
 
         other_roles_move_lists = tuple(
-            tuple((role, move) for move in game_state.legal_moves(role))
+            tuple((role, move) for move in game_state.legal_actions(role))
             for role in self.other_roles)
 
         max_step_score = self.min_utility - 1
         max_step_score_move_sequence = ()
 
-        own_moves = tuple(game_state.legal_moves(self.role))
+        own_moves = tuple(game_state.legal_actions(self.role))
         for own_move in own_moves:
             min_step_score = self.max_utility + 1
             min_step_score_move_sequence = ()
@@ -282,7 +282,7 @@ class Minimax(SearchPlayer):
 #         try:
 #             current_role = self.players[player_index]
 #             is_terminal = self.game_state.is_terminal()
-#             moves = tuple(self.game_state.legal_moves(current_role))
+#             moves = tuple(self.game_state.legal_actions(current_role))
 #             return self.search_for_move(depth=depth,
 #                                         player_index=player_index,
 #                                         current_role=current_role,
@@ -546,5 +546,5 @@ class Minimax(SearchPlayer):
 #         return self.game_state.get_utility(self.role)
 #
 #     def heuristic_mobility(self):
-#         return (float(len(set(self.game_state.legal_moves(self.role)))) /
+#         return (float(len(set(self.game_state.legal_actions(self.role)))) /
 #                 self.num_possible_moves[str(self.role)])
