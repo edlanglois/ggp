@@ -84,7 +84,8 @@ class BaseTestGeneralGame(object):
         assert_is_instance(self.game.initial_state(), GeneralGameState)
 
     def test_roles(self):
-        assert_equal({str(role) for role in self.game.roles()}, self.roles)
+        assert_equal(sorted([str(role) for role in self.game.roles()]),
+                     sorted(list(self.roles)))
 
     def test_num_roles(self):
         assert_equal(self.game.num_roles(), len(self.roles))
@@ -104,13 +105,14 @@ class BaseTestGeneralGame(object):
         for role in self.roles:
             role_object = self.game.role_object(role)
             assert_equal(
-                {str(move) for move in self.game.all_actions(role_object)},
-                self.actions[role])
+                sorted([str(move) for move
+                        in self.game.all_actions(role_object)]),
+                sorted(list(self.actions[role])))
 
     def test_base_terms(self):
         assert_equal(
-            {str(term) for term in self.game.base_terms()},
-            self.base_terms)
+            sorted([str(term) for term in self.game.base_terms()]),
+            sorted(list(self.base_terms)))
 
     def test_max_utility(self):
         assert_equal(self.game.max_utility(), 100)
@@ -124,9 +126,9 @@ class TestGeneralGameButtonsAndLights(BaseTestGeneralGame):
         super(TestGeneralGameButtonsAndLights, self).__init__(
             game_name='buttonsandlights',
             game_rules_file=BUTTONS_AND_LIGHTS_FILE,
-            roles={'robot'},
-            actions={'a', 'b', 'c'},
-            base_terms={'1', '2', '3', '4', '5', '6', '7', 'p', 'q', 'r'})
+            roles=['robot'],
+            actions=['a', 'b', 'c'],
+            base_terms=['1', '2', '3', '4', '5', '6', '7', 'p', 'q', 'r'])
 
 
 class TestGeneralGameTicTacToe(BaseTestGeneralGame):
@@ -134,13 +136,13 @@ class TestGeneralGameTicTacToe(BaseTestGeneralGame):
         super(TestGeneralGameTicTacToe, self).__init__(
             game_name='tictactoe',
             game_rules_file=TIC_TAC_TOE_FILE,
-            roles={'white', 'black'},
-            actions={'mark({},{})'.format(i, j)
-                     for i in range(1, 4) for j in range(1, 4)},
+            roles=['white', 'black'],
+            actions=['mark({},{})'.format(i, j)
+                     for i in range(1, 4) for j in range(1, 4)],
             base_terms=(
-                {'step({})'.format(i) for i in range(1, 8)}.union(
-                    {'cell({},{},{})'.format(i, j, x)
-                     for i in range(1, 4) for j in range(1, 4) for x in 'xob'}))
+                ['step({})'.format(i) for i in range(1, 8)] +
+                ['cell({},{},{})'.format(i, j, x)
+                 for i in range(1, 4) for j in range(1, 4) for x in 'xob'])
         )
 
 
@@ -157,15 +159,22 @@ class TestGeneralGameStateButtonsAndLights(object):
     def test_utility(self):
         assert_equal(self.initial_state.utility(self.role), 0)
 
-    def test_legal_actions(self):
+    def test_legal_actions_iterating(self):
         assert_equal(
-            {str(move) for move in self.initial_state.legal_actions(self.role)},
-            {'a', 'b', 'c'})
+            sorted([str(move) for move
+                    in self.initial_state.legal_actions(self.role)]),
+            sorted(['a', 'b', 'c']))
+
+    def test_legal_actions_not_iterating(self):
+        assert_equal(
+            sorted([str(move) for move
+                    in list(self.initial_state.legal_actions(self.role))]),
+            sorted(['a', 'b', 'c']))
 
     def test_state_terms(self):
         assert_equal(
-            {str(term) for term in self.initial_state.state_terms()},
-            {'1'})
+            sorted([str(term) for term in self.initial_state.state_terms()]),
+            sorted(['1']))
 
     def test_is_terminal(self):
         assert_false(self.initial_state.is_terminal())
@@ -180,11 +189,11 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(new_state.turn_number(), 1)
         assert_equal(new_state.utility(self.role), 0)
         assert_equal(
-            {str(move) for move in new_state.legal_actions(self.role)},
-            {'a', 'b', 'c'})
+            sorted([str(move) for move in new_state.legal_actions(self.role)]),
+            sorted(['a', 'b', 'c']))
         assert_equal(
-            {str(term) for term in new_state.state_terms()},
-            {'2', 'p'})
+            sorted([str(term) for term in new_state.state_terms()]),
+            sorted(['2', 'p']))
         assert_false(new_state.is_terminal())
 
     def test_apply_moves_check_initial(self):
@@ -195,11 +204,12 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(self.initial_state.turn_number(), 0)
         assert_equal(self.initial_state.utility(self.role), 0)
         assert_equal(
-            {str(move) for move in self.initial_state.legal_actions(self.role)},
-            {'a', 'b', 'c'})
+            sorted([str(move) for move
+                    in self.initial_state.legal_actions(self.role)]),
+            sorted(['a', 'b', 'c']))
         assert_equal(
-            {str(term) for term in self.initial_state.state_terms()},
-            {'1'})
+            sorted([str(term) for term in self.initial_state.state_terms()]),
+            sorted(['1']))
         assert_false(self.initial_state.is_terminal())
 
     def test_apply_moves_full_game_won(self):
@@ -217,11 +227,12 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(final_state.turn_number(), 6)
         assert_equal(final_state.utility(self.role), 100)
         assert_equal(
-            {str(move) for move in final_state.legal_actions(self.role)},
-            {'a', 'b', 'c'})
+            sorted([str(move) for move
+                    in final_state.legal_actions(self.role)]),
+            sorted(['a', 'b', 'c']))
         assert_equal(
-            {str(term) for term in final_state.state_terms()},
-            {'7', 'p', 'q', 'r'})
+            sorted([str(term) for term in final_state.state_terms()]),
+            sorted(['7', 'p', 'q', 'r']))
         assert_true(final_state.is_terminal())
 
     def test_apply_moves_full_game_lost(self):
@@ -239,11 +250,12 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(final_state.turn_number(), 6)
         assert_equal(final_state.utility(self.role), 0)
         assert_equal(
-            {str(move) for move in final_state.legal_actions(self.role)},
-            {'a', 'b', 'c'})
+            sorted([str(move) for move
+                    in final_state.legal_actions(self.role)]),
+            sorted(['a', 'b', 'c']))
         assert_equal(
-            {str(term) for term in final_state.state_terms()},
-            {'7', 'p', 'r'})
+            sorted([str(term) for term in final_state.state_terms()]),
+            sorted(['7', 'p', 'r']))
         assert_true(final_state.is_terminal())
 
 
@@ -266,9 +278,10 @@ def test_play_tic_tac_toe():
     assert_equal(state0.utility(white), 50)
     assert_equal(state0.utility(black), 50)
     assert_false(state0.is_terminal())
-    assert_equal({str(term) for term in state0.state_terms()},
-                 {'cell({},{},b)'.format(i, j)
-                  for i in range(1, 4) for j in range(1, 4)}.union({'step(1)'}))
+    assert_equal(sorted([str(term) for term in state0.state_terms()]),
+                 sorted(['cell({},{},b)'.format(i, j)
+                         for i in range(1, 4) for j in range(1, 4)] +
+                        ['step(1)']))
 
     state1 = state0.apply_moves({black: actions[2][2], white: actions[2][3]})
     state2 = state1.apply_moves({black: actions[1][2], white: actions[1][3]})
@@ -279,8 +292,9 @@ def test_play_tic_tac_toe():
     assert_equal(state3.utility(black), 50)
     assert_false(state3.is_terminal())
     assert_equal(
-        {str(action) for action in state3.legal_actions(white)},
-        {"mark({},{})".format(i, j) for i, j in [(1, 1), (3, 2), (3, 3)]})
+        sorted([str(action) for action in state3.legal_actions(white)]),
+        sorted(["mark({},{})".format(i, j)
+                for i, j in [(1, 1), (3, 2), (3, 3)]]))
 
     state4_won = state3.apply_moves({black: actions[3][2],
                                      white: actions[1][1]})
