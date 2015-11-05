@@ -88,8 +88,8 @@ class GamePlayer(object):
         for base in self.game_state.state_terms():
             self.logger.debug("\t%s", str(base))
 
-        moves = {role: move
-                 for role, move in zip(self.roles, new_moves)}
+        moves = {role: self.game.action_object(str(action))
+                 for role, action in zip(self.roles, new_moves)}
 
         self.game_state = self.game_state.apply_moves(moves)
 
@@ -105,21 +105,23 @@ class GamePlayer(object):
 class Legal(GamePlayer):
     """Plays the first legal move."""
     def get_move(self):
-        moves = self.game_state.legal_actions(self.role)
-        first_move = next(moves)
-        moves.close()
-        return first_move
+        try:
+            actions = self.game_state.legal_actions(self.role)
+            first_action = next(actions)
+        finally:
+            actions.close()
+        return first_action
 
 
 class Random(GamePlayer):
     """Plays a random legal move."""
     def get_move(self):
-        random_move = None
-        for i, move in enumerate(self.game_state.legal_actions(self.role)):
+        random_action = None
+        for i, action in enumerate(self.game_state.legal_actions(self.role)):
             if random.randint(0, i) == 0:
-                random_move = move
+                random_action = action
 
-        return random_move
+        return random_action
 
 
 class SearchPlayer(GamePlayer):
@@ -161,8 +163,12 @@ class SimpleDepthFirstSearch(SearchPlayer):
         best_score = self.MIN_SCORE - 1
         best_move_sequence = tuple()
 
+        print(' ' * game_state.turn_number() + ' ** ' + str(moves))
+        print(' ' * game_state.turn_number() + ' == ' +
+              str(tuple(str(move) for move in moves)))
         for move in moves:
-            score, move_sequence = self._get_best_score_and_move_sequence(
+            print(' ' * game_state.turn_number() + ' >  ' + str(move))
+            score, move_sequence = self.score_estimate_and_move_sequence(
                 game_state=game_state.apply_moves({self.role: move}))
 
             assert score >= self.MIN_SCORE

@@ -38,6 +38,7 @@ from .core import (
     PL_cons_list,
     PL_context,
     PL_copy_term_ref,
+    PL_erase,
     PL_exception,
     PL_functor_arity,
     PL_functor_name,
@@ -96,6 +97,8 @@ from .core import (
     PL_put_string_nchars,
     PL_put_term,
     PL_put_variable,
+    PL_record,
+    PL_recorded,
     PL_register_atom,
     PL_term_type,
     PL_unregister_atom,
@@ -157,6 +160,11 @@ class CallError(Exception):
         return str(self.msg)
 
 
+class PrologMemoryError(Exception):
+    """Prolog stack is out of memory."""
+    pass
+
+
 class HandleWrapper(object):
     def __init__(self, handle):
         self._handle = handle
@@ -185,6 +193,14 @@ class HandleWrapper(object):
         return not self == other
 
 
+class TemporaryHandleMixIn(object):
+    """Mixin for `HandleWrapper` where the handle can be invalidated."""
+    def invalidate(self):
+        # TODO: Find a way that gives a more informative error message.
+        # Using __get__?
+        del self._handle
+
+
 class ConstantHandleToConstantMixIn(object):
     """`HandleWrapper` mixin where `_handle` is constant and refers to a
     constant object.
@@ -197,7 +213,7 @@ class ConstantHandleToConstantMixIn(object):
 class Term(HandleWrapper):
     def __init__(self):
         """Initialize a new term. The term is initially a variable."""
-        super(Term, self).__init__(handle=PL_new_term_ref())
+        super().__init__(handle=PL_new_term_ref())
 
     def __str__(self):
         """A Prolog string representing this term."""
@@ -219,7 +235,7 @@ class Term(HandleWrapper):
 
     def __deepcopy__(self, memo):
         """Creates a new Prolog term, copied from the old."""
-        return self._from_handle(handle=PL_copy_term_ref(self._handle))
+        return self.from_term_copy(self)
 
     def __getitem__(self, key):
         if not isinstance(key, int):
@@ -234,6 +250,11 @@ class Term(HandleWrapper):
                 'Index out of range. ({index} >= term arity {arity})'.format(
                     index=key, arity=arity))
         return self.get_arg(key)
+
+    @classmethod
+    def from_term_copy(cls, term):
+        """Create a new term as a copy of an existing one."""
+        return cls._from_handle(handle=PL_copy_term_ref(term._handle))
 
     def type(self):
         """Term type as a string.
@@ -756,6 +777,10 @@ for put_method_name in dir(Term):
     _add_from_method_to_class(Term, put_method_name, put_method)
 
 
+class TemporaryTerm(Term, TemporaryHandleMixIn):
+    pass
+
+
 class TermList(HandleWrapper):
     """A collection of term references.
 
@@ -763,11 +788,10 @@ class TermList(HandleWrapper):
     """
     def __init__(self, length):
         self._length = length
-        super(TermList, self).__init__(handle=PL_new_term_refs(length))
+        super().__init__(handle=PL_new_term_refs(length))
 
     def __eq__(self, other):
-        return (super(TermList, self).__eq__(other) and
-                self._length == other._length)
+        return (super().__eq__(other) and self._length == other._length)
 
     def __str__(self):
         return str(list(self))
@@ -791,12 +815,12 @@ class Atom(HandleWrapper):
     """Prolog Atom Interface"""
     def __init__(self, name):
         """Create a named atom."""
-        super(Atom, self).__init__(handle=PL_new_atom(name.encode()))
+        super().__init__(handle=PL_new_atom(name.encode()))
 
     @classmethod
     def _from_handle(cls, handle):
         """Create an Atom object from an existing atom handle."""
-        new_atom = super(Atom, cls)._from_handle(handle)
+        new_atom = super()._from_handle(handle)
         PL_register_atom(new_atom._handle)
         return new_atom
 
@@ -842,8 +866,7 @@ class Functor(HandleWrapper, ConstantHandleToConstantMixIn):
         except AttributeError:
             name_handle = Atom(name=name)._handle
 
-        super(Functor, self).__init__(
-            handle=PL_new_functor(name_handle, arity))
+        super().__init__(handle=PL_new_functor(name_handle, arity))
 
     def __str__(self):
         return "{name}/{arity}".format(name=self.get_name(),
@@ -870,7 +893,7 @@ class Module(HandleWrapper, ConstantHandleToConstantMixIn):
         Args:
             name (Atom): Name of the module.
         """
-        super(Module, self).__init__(handle=PL_new_module(name._handle))
+        super().__init__(handle=PL_new_module(name._handle))
 
     def __str__(self):
         return str(self.get_name())
@@ -898,7 +921,7 @@ class Predicate(HandleWrapper, ConstantHandleToConstantMixIn):
             module (Module)  : Module containing the functor.
                 If ``None``, uses the current context module.
         """
-        return super(Predicate, self).__init__(
+        return super().__init__(
             handle=PL_pred(functor._handle, _get_nullable_handle(module)))
 
     @classmethod
@@ -1046,7 +1069,7 @@ class Query(object):
                     goal_context_module=self.goal_context_module)
 
 
-class ActiveQuery(HandleWrapper):
+class ActiveQuery(HandleWrapper, TemporaryHandleMixIn):
     """Interface to an active Prolog Query.
 
     Only one query can be active at a time.
@@ -1055,12 +1078,12 @@ class ActiveQuery(HandleWrapper):
         """Create an active query. Arguments are the same as `Query.__init__`.
         """
         predicate.check_argument_match(arguments)
-        super(ActiveQuery, self).__init__(
-            handle=PL_open_query(
-                _get_nullable_handle(goal_context_module),
-                PL_Q_NODEBUG | PL_Q_CATCH_EXCEPTION,
-                predicate._handle,
-                arguments._handle))
+        super().__init__(handle=PL_open_query(
+            _get_nullable_handle(goal_context_module),
+            PL_Q_NODEBUG | PL_Q_CATCH_EXCEPTION,
+            predicate._handle,
+            arguments._handle))
+        self._bound_temporary_terms = []
 
     def next_solution(self):
         """Find the next solution, updating `arguments`.
@@ -1070,18 +1093,80 @@ class ActiveQuery(HandleWrapper):
 
         Raises:
             PrologException: If an exception was raised in Prolog.
+
+        Warning
+        -------
+        Calling `next_solution` results in backtracking.
+        All variable bindings and newly-created terms since the last call
+        will be undone.
+
+        Use `TermRecord` to persist terms across backtracks.
         """
         success = bool(PL_next_solution(self._handle))
+        self._invalidate_bound_temporary_terms()
         if not success:
             exception_term = PL_exception(self._handle)
             if exception_term:
                 raise PrologException(Term._from_handle(exception_term))
         return success
 
+    def term_assignments(self, term, persistent):
+        """The value of a term under each solution to the query.
+
+        Iterates over all remaining solutions to the query and, for each
+        solution, yields the current value of `term`.
+
+        Args:
+            term       (Term): The term whose assignments to return.
+            persistent (bool): If True, `TermRecord` objects will be yielded
+                instead of `TemporaryTerm` so that their value persists
+                across solutions.
+
+        Yields:
+            Either and `TemporaryTerm` or a `TermRecord` representing the
+            value of `term` under a particular solution.
+
+        If `persistent` is ``False``, then `TemporaryTerm` values are yielded,
+        which are invalidated on the next call to `next_solution`.
+        """
+        if persistent:
+            return self._term_assignments_persistent(term)
+        else:
+            return self._term_assignments_temporary(term)
+
+    def _term_assignments_persistent(self, term):
+        while self.next_solution():
+            yield TermRecord(term)
+
+    def _term_assignments_temporary(self, term):
+        while self.next_solution():
+            temporary_term = TemporaryTerm.from_term_copy(term)
+            self.bind_temporary_term(temporary_term)
+            yield temporary_term
+
+    def bind_temporary_term(self, term):
+        """Bind a temporary term to the current solution state of this query.
+
+        The term will be invalidated on the next call to `next_solution`.
+
+        Args:
+            term (TemporaryTerm): Temporary term to bind.
+        """
+        self._bound_temporary_terms.append(term)
+
+    def _invalidate_bound_temporary_terms(self):
+        for term in self._bound_temporary_terms:
+            term.invalidate()
+        self._bound_temporary_terms = []
+
     def close(self):
         """Close the query and destory all data and bindings associated with it.
         """
         PL_close_query(self._handle)
+        self.invalidate()
+
+    def __repr__(self):
+        return ('ActiveQuery(handle_={handle!r})'.format(handle=self._handle))
 
 
 def _get_nullable_handle(handle_wrapper):
@@ -1090,3 +1175,32 @@ def _get_nullable_handle(handle_wrapper):
         return None
     else:
         return handle_wrapper._handle
+
+
+def TermRecord(HandleWrapper):
+    """Records a Prolog Term so that it can be retreived later.
+
+    This persists across backtracks, unlike `Term` itself.
+    """
+    def __init__(self, term):
+        """Create a term record.
+
+        Args:
+            term (Term) : Term to record.
+        """
+        super().__init__(PL_record(term._handle))
+
+    def get(self):
+        """Get the term that was stored in this object.
+
+        Returns:
+            Term: A copy of the stored term.
+        """
+        t = term_t()
+        success = PL_recorded(self._handle, t)
+        if not success:
+            raise PrologMemoryError()
+        return Term._from_handle(t)
+
+    def __del__(self):
+        PL_erase(self._handle)

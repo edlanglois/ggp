@@ -83,8 +83,12 @@ class BaseTestGeneralGame(object):
     def test_initial_state(self):
         assert_is_instance(self.game.initial_state(), GeneralGameState)
 
-    def test_roles(self):
+    def test_roles_iterating(self):
         assert_equal(sorted([str(role) for role in self.game.roles()]),
+                     sorted(list(self.roles)))
+
+    def test_roles_not_iterating(self):
+        assert_equal(sorted([str(role) for role in list(self.game.roles())]),
                      sorted(list(self.roles)))
 
     def test_num_roles(self):
@@ -101,7 +105,7 @@ class BaseTestGeneralGame(object):
         action_object = self.game.action_object(action)
         assert_equal(str(action_object), action)
 
-    def test_all_actions(self):
+    def test_all_actions_iterating(self):
         for role in self.roles:
             role_object = self.game.role_object(role)
             assert_equal(
@@ -109,9 +113,22 @@ class BaseTestGeneralGame(object):
                         in self.game.all_actions(role_object)]),
                 sorted(list(self.actions[role])))
 
-    def test_base_terms(self):
+    def test_all_actions_not_iterating(self):
+        for role in self.roles:
+            role_object = self.game.role_object(role)
+            assert_equal(
+                sorted([str(move) for move
+                        in list(self.game.all_actions(role_object))]),
+                sorted(list(self.actions[role])))
+
+    def test_base_terms_iterating(self):
         assert_equal(
             sorted([str(term) for term in self.game.base_terms()]),
+            sorted(list(self.base_terms)))
+
+    def test_base_terms_not_iterating(self):
+        assert_equal(
+            sorted([str(term) for term in list(self.game.base_terms())]),
             sorted(list(self.base_terms)))
 
     def test_max_utility(self):
@@ -171,9 +188,15 @@ class TestGeneralGameStateButtonsAndLights(object):
                     in list(self.initial_state.legal_actions(self.role))]),
             sorted(['a', 'b', 'c']))
 
-    def test_state_terms(self):
+    def test_state_terms_iterating(self):
         assert_equal(
             sorted([str(term) for term in self.initial_state.state_terms()]),
+            sorted(['1']))
+
+    def test_state_terms_not_iterating(self):
+        assert_equal(
+            sorted([str(term) for term
+                    in list(self.initial_state.state_terms())]),
             sorted(['1']))
 
     def test_is_terminal(self):

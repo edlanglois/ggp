@@ -1,4 +1,3 @@
-import copy
 import logging
 import os.path
 
@@ -185,8 +184,7 @@ class GeneralGame(object):
             self._input_functor, Term.from_atom(role), action_variable)
 
         with self._stateless_query(input_query_term) as q:
-            while q.next_solution():
-                yield copy.deepcopy(action_variable)
+            yield from q.term_assignments(action_variable, persistent=False)
 
     def base_terms(self):
         """A list of the terms which define the game state."""
@@ -195,8 +193,7 @@ class GeneralGame(object):
             self._base_functor, base_variable)
 
         with self._stateless_query(base_query_term) as q:
-            while q.next_solution():
-                yield copy.deepcopy(base_variable)
+            yield from q.term_assignments(base_variable, persistent=False)
 
     def max_utility(self):
         """Maximum utility achievable by any player."""
@@ -305,8 +302,7 @@ class GeneralGameState(object):
         action_query = Term.from_cons_functor(
             self._legal_functor, Term.from_atom(role), action)
         with self._query(action_query) as q:
-            while q.next_solution():
-                yield copy.deepcopy(action)
+            yield from q.term_assignments(action, persistent=False)
 
     def state_terms(self):
         """Iterator of the base terms that are true for this state."""
@@ -316,8 +312,7 @@ class GeneralGameState(object):
         true_term_query = Term.from_cons_functor(
             self._true_functor, state_term)
         with self._query(base_term_query, true_term_query) as q:
-            while q.next_solution():
-                yield copy.deepcopy(state_term)
+            yield from q.term_assignments(state_term, persistent=False)
 
     def is_terminal(self):
         """True if the current game state is terminal."""
