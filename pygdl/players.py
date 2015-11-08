@@ -200,11 +200,10 @@ class SequentialPlanner(SimpleDepthFirstSearch):
 class Minimax(SearchPlayer):
     def __init__(self, game, role, start_clock, play_clock):
         super().__init__(game, role, start_clock, play_clock)
-        self.roles = tuple(str(role_)
-                           for role_ in self.game.roles())
+        own_role_str = str(self.role)
         self.other_roles = tuple(
-            str(other_role) for other_role in self.game.roles()
-            if str(other_role) != str(self.role))
+            other_role for other_role in self.game.roles()
+            if str(other_role) != own_role_str)
         self.max_utility = self.game.max_utility()
         self.min_utility = self.game.min_utility()
 
@@ -212,15 +211,17 @@ class Minimax(SearchPlayer):
         if game_state.is_terminal():
             return game_state.utility(self.role), ()
 
-        assert False, "Needs a update with persistent"
         other_roles_move_lists = tuple(
-            tuple((role, move) for move in game_state.legal_actions(role))
+            tuple((role, move_record.get()) for move_record
+                  in tuple(game_state.legal_actions(role, persistent=True)))
             for role in self.other_roles)
 
         max_step_score = self.min_utility - 1
         max_step_score_move_sequence = ()
 
-        own_moves = tuple(game_state.legal_actions(self.role))
+        own_moves = tuple(
+            action.get() for action
+            in tuple(game_state.legal_actions(self.role, persistent=True)))
         for own_move in own_moves:
             min_step_score = self.max_utility + 1
             min_step_score_move_sequence = ()
