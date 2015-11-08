@@ -107,7 +107,6 @@ from .core import (
     functor_t,
     module_t,
     state as prolog_state,
-    term_t,
 )
 
 _term_type_code_name = {
@@ -538,10 +537,10 @@ class Term(HandleWrapper):
             AssertionError: If `index` is out of bounds or
                 if this term is not compound.
         """
-        t = term_t()  # TODO: Term() instead?
+        t = Term()
         self._require_success(
-            PL_get_arg(index + 1, self._handle, t))
-        return Term._from_handle(t.value)
+            PL_get_arg(index + 1, self._handle, t._handle))
+        return t
 
     HeadTail = namedtuple('HeadTail', ['head', 'tail'])
 
@@ -551,13 +550,12 @@ class Term(HandleWrapper):
         Returns:
             HeadTail: Named tuple of head and tail, both `Term` objects.
         """
-        head = term_t()
-        tail = term_t()
+        head = Term()
+        tail = Term()
         self._require_success_expecting_type(
-            PL_get_list(self._handle, head, tail),
+            PL_get_list(self._handle, head._handle, tail._handle),
             'list')
-        return self.HeadTail(head=Term._from_handle(head.value),
-                             tail=Term._from_handle(tail.value))
+        return self.HeadTail(head=head, tail=tail)
 
     def get_list_head(self):
         """The head of the list represented by this term.
@@ -565,11 +563,11 @@ class Term(HandleWrapper):
         Returns:
             Term:
         """
-        head = term_t()
+        head = Term()
         self._require_success_expecting_type(
-            PL_get_head(self._handle, head),
+            PL_get_head(self._handle, head._handle),
             'list')
-        return Term._from_handle(head.value)
+        return head
 
     def get_list_tail(self):
         """The tail of the list represented by this term.
@@ -577,11 +575,11 @@ class Term(HandleWrapper):
         Returns:
             Term:
         """
-        tail = term_t()
+        tail = Term()
         self._require_success_expecting_type(
-            PL_get_tail(self._handle, tail),
+            PL_get_tail(self._handle, tail._handle),
             'list')
-        return Term._from_handle(tail.value)
+        return tail
 
     def get_nil(self):
         """Succeds if this term represents the list termination constant (nil).
