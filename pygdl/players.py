@@ -85,7 +85,7 @@ class GamePlayer(object):
 
         self.logger.debug("GAME DESCRIPTION FOR TURN %s",
                           self.game_state.turn_number())
-        for base in self.game_state.state_terms():
+        for base in self.game_state.state_terms(persistent=False):
             self.logger.debug("\t%s", str(base))
 
         moves = {role: self.game.action_object(str(action))
@@ -105,21 +105,21 @@ class GamePlayer(object):
 class Legal(GamePlayer):
     """Plays the first legal move."""
     def get_move(self):
+        actions = self.game_state.legal_actions(self.role, persistent=False)
         try:
-            actions = self.game_state.legal_actions(self.role)
-            first_action = next(actions)
+            return str(next(actions))
         finally:
             actions.close()
-        return first_action
 
 
 class Random(GamePlayer):
     """Plays a random legal move."""
     def get_move(self):
         random_action = None
-        for i, action in enumerate(self.game_state.legal_actions(self.role)):
+        for i, action in enumerate(
+                self.game_state.legal_actions(self.role, persistent=False)):
             if random.randint(0, i) == 0:
-                random_action = action
+                random_action = str(action)
 
         return random_action
 
@@ -158,16 +158,13 @@ class SimpleDepthFirstSearch(SearchPlayer):
         if game_state.is_terminal():
             return game_state.utility(self.role), tuple()
 
-        moves = tuple(game_state.legal_actions(self.role))
+        moves = tuple(game_state.legal_actions(self.role, persistent=True))
 
         best_score = self.MIN_SCORE - 1
         best_move_sequence = tuple()
 
-        print(' ' * game_state.turn_number() + ' ** ' + str(moves))
-        print(' ' * game_state.turn_number() + ' == ' +
-              str(tuple(str(move) for move in moves)))
-        for move in moves:
-            print(' ' * game_state.turn_number() + ' >  ' + str(move))
+        for move_record in moves:
+            move = move_record.get()
             score, move_sequence = self.score_estimate_and_move_sequence(
                 game_state=game_state.apply_moves({self.role: move}))
 
@@ -176,7 +173,7 @@ class SimpleDepthFirstSearch(SearchPlayer):
 
             if score > best_score:
                 best_score = score
-                best_move_sequence = (move,) + move_sequence
+                best_move_sequence = (str(move),) + move_sequence
 
             if best_score == self.MAX_SCORE:
                 break
@@ -197,8 +194,7 @@ class SequentialPlanner(SimpleDepthFirstSearch):
         self.move_sequence = list(move_sequence)
 
     def get_move(self):
-        move = self.extract_own_move(self.move_sequence.pop(0))
-        return move
+        return self.extract_own_move(self.move_sequence.pop(0))
 
 
 class Minimax(SearchPlayer):
@@ -216,6 +212,7 @@ class Minimax(SearchPlayer):
         if game_state.is_terminal():
             return game_state.utility(self.role), ()
 
+        assert False, "Needs a update with persistent"
         other_roles_move_lists = tuple(
             tuple((role, move) for move in game_state.legal_actions(role))
             for role in self.other_roles)
