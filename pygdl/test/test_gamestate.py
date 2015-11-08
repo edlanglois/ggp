@@ -98,7 +98,7 @@ class BaseTestGeneralGame(object):
         for role in self.roles:
             role_object = self.game.role_object(role)
             assert_equal(str(role_object), role)
-            list(self.game.all_actions(role_object))
+            list(self.game.all_actions(role_object, persistent=False))
 
     def test_action_object(self):
         action = next(iter(next(iter(self.actions.values()))))
@@ -110,7 +110,8 @@ class BaseTestGeneralGame(object):
             role_object = self.game.role_object(role)
             assert_equal(
                 sorted([str(move) for move
-                        in self.game.all_actions(role_object)]),
+                        in self.game.all_actions(role_object,
+                                                 persistent=False)]),
                 sorted(list(self.actions[role])))
 
     def test_all_actions_not_iterating(self):
@@ -124,7 +125,8 @@ class BaseTestGeneralGame(object):
 
     def test_base_terms_iterating(self):
         assert_equal(
-            sorted([str(term) for term in self.game.base_terms()]),
+            sorted([str(term) for term
+                    in self.game.base_terms(persistent=False)]),
             sorted(list(self.base_terms)))
 
     def test_base_terms_not_iterating(self):
@@ -181,7 +183,8 @@ class TestGeneralGameStateButtonsAndLights(object):
     def test_legal_actions_iterating(self):
         assert_equal(
             sorted([str(move) for move
-                    in self.initial_state.legal_actions(self.role)]),
+                    in self.initial_state.legal_actions(self.role,
+                                                        persistent=False)]),
             sorted(['a', 'b', 'c']))
 
     def test_legal_actions_not_iterating(self):
@@ -193,7 +196,8 @@ class TestGeneralGameStateButtonsAndLights(object):
 
     def test_state_terms_iterating(self):
         assert_equal(
-            sorted([str(term) for term in self.initial_state.state_terms()]),
+            sorted([str(term) for term
+                    in self.initial_state.state_terms(persistent=False)]),
             sorted(['1']))
 
     def test_state_terms_not_iterating(self):
@@ -215,10 +219,12 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(new_state.turn_number(), 1)
         assert_equal(new_state.utility(self.role), 0)
         assert_equal(
-            sorted([str(move) for move in new_state.legal_actions(self.role)]),
+            sorted([str(move) for move
+                    in new_state.legal_actions(self.role, persistent=False)]),
             sorted(['a', 'b', 'c']))
         assert_equal(
-            sorted([str(term) for term in new_state.state_terms()]),
+            sorted([str(term) for term
+                    in new_state.state_terms(persistent=False)]),
             sorted(['2', 'p']))
         assert_false(new_state.is_terminal())
 
@@ -231,10 +237,12 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(self.initial_state.utility(self.role), 0)
         assert_equal(
             sorted([str(move) for move
-                    in self.initial_state.legal_actions(self.role)]),
+                    in self.initial_state.legal_actions(self.role,
+                                                        persistent=False)]),
             sorted(['a', 'b', 'c']))
         assert_equal(
-            sorted([str(term) for term in self.initial_state.state_terms()]),
+            sorted([str(term) for term
+                    in self.initial_state.state_terms(persistent=False)]),
             sorted(['1']))
         assert_false(self.initial_state.is_terminal())
 
@@ -254,10 +262,11 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(final_state.utility(self.role), 100)
         assert_equal(
             sorted([str(move) for move
-                    in final_state.legal_actions(self.role)]),
+                    in final_state.legal_actions(self.role, persistent=False)]),
             sorted(['a', 'b', 'c']))
         assert_equal(
-            sorted([str(term) for term in final_state.state_terms()]),
+            sorted([str(term) for term
+                    in final_state.state_terms(persistent=False)]),
             sorted(['7', 'p', 'q', 'r']))
         assert_true(final_state.is_terminal())
 
@@ -277,10 +286,11 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(final_state.utility(self.role), 0)
         assert_equal(
             sorted([str(move) for move
-                    in final_state.legal_actions(self.role)]),
+                    in final_state.legal_actions(self.role, persistent=False)]),
             sorted(['a', 'b', 'c']))
         assert_equal(
-            sorted([str(term) for term in final_state.state_terms()]),
+            sorted([str(term) for term
+                    in final_state.state_terms(persistent=False)]),
             sorted(['7', 'p', 'r']))
         assert_true(final_state.is_terminal())
 
@@ -295,7 +305,8 @@ def test_play_tic_tac_toe():
     actions = {i: {j: game.action_object("mark('{}', '{}')".format(i, j))
                    for j in range(1, 4)}
                for i in range(1, 4)}
-    assert_equal({str(action) for action in game.all_actions(white)},
+    assert_equal({str(action) for action
+                  in game.all_actions(white, persistent=False)},
                  set(itertools.chain(
                      *((str(action) for action in value.values())
                        for value in actions.values()))))
@@ -304,7 +315,8 @@ def test_play_tic_tac_toe():
     assert_equal(state0.utility(white), 50)
     assert_equal(state0.utility(black), 50)
     assert_false(state0.is_terminal())
-    assert_equal(sorted([str(term) for term in state0.state_terms()]),
+    assert_equal(sorted([str(term) for term
+                         in state0.state_terms(persistent=False)]),
                  sorted(['cell({},{},b)'.format(i, j)
                          for i in range(1, 4) for j in range(1, 4)] +
                         ['step(1)']))
@@ -318,7 +330,8 @@ def test_play_tic_tac_toe():
     assert_equal(state3.utility(black), 50)
     assert_false(state3.is_terminal())
     assert_equal(
-        sorted([str(action) for action in state3.legal_actions(white)]),
+        sorted([str(action) for action
+                in state3.legal_actions(white, persistent=False)]),
         sorted(["mark({},{})".format(i, j)
                 for i, j in [(1, 1), (3, 2), (3, 3)]]))
 

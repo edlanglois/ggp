@@ -172,7 +172,7 @@ class GeneralGame(object):
         """The number of roles in the game."""
         return len(set(self.roles()))
 
-    def all_actions(self, role, persistent=False):
+    def all_actions(self, role, persistent):
         """All possible actions for `role` in this game.
 
         This does not represent the legal actions in some state.
@@ -191,7 +191,7 @@ class GeneralGame(object):
             yield from q.term_assignments(action_variable,
                                           persistent=persistent)
 
-    def base_terms(self, persistent=False):
+    def base_terms(self, persistent):
         """A list of the terms which define the game state."""
         base_variable = Term()
         base_query_term = Term.from_cons_functor(
@@ -302,7 +302,7 @@ class GeneralGameState(object):
         else:
             return int(utility)
 
-    def legal_actions(self, role, persistent=False):
+    def legal_actions(self, role, persistent):
         """An iterator of legal actions for role in the current state."""
         action = Term()
         action_query = Term.from_cons_functor(
@@ -310,7 +310,7 @@ class GeneralGameState(object):
         with self._query(action_query) as q:
             yield from q.term_assignments(action, persistent=persistent)
 
-    def state_terms(self, persistent=False):
+    def state_terms(self, persistent):
         """Iterator of the base terms that are true for this state."""
         state_term = Term()
         base_term_query = Term.from_cons_functor(
