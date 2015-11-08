@@ -172,28 +172,34 @@ class GeneralGame(object):
         """The number of roles in the game."""
         return len(set(self.roles()))
 
-    def all_actions(self, role):
-        """All possible actions for role in this game.
+    def all_actions(self, role, persistent=False):
+        """All possible actions for `role` in this game.
 
         This does not represent the legal actions in some state.
         It is an iterator of all actions which may be available to role at some
         time in the game.
+
+        If `persistent` is ``False`` then each yielded term is valid only
+        until the term after it is yielded. If `persistent` is ``True``, then
+        `TermRecord`s are yielded instead of `Term`s.
         """
         action_variable = Term()
         input_query_term = Term.from_cons_functor(
             self._input_functor, Term.from_atom(role), action_variable)
 
         with self._stateless_query(input_query_term) as q:
-            yield from q.term_assignments(action_variable, persistent=False)
+            yield from q.term_assignments(action_variable,
+                                          persistent=persistent)
 
-    def base_terms(self):
+    def base_terms(self, persistent=False):
         """A list of the terms which define the game state."""
         base_variable = Term()
         base_query_term = Term.from_cons_functor(
             self._base_functor, base_variable)
 
         with self._stateless_query(base_query_term) as q:
-            yield from q.term_assignments(base_variable, persistent=False)
+            yield from q.term_assignments(base_variable,
+                                          persistent=persistent)
 
     def max_utility(self):
         """Maximum utility achievable by any player."""
@@ -296,15 +302,15 @@ class GeneralGameState(object):
         else:
             return int(utility)
 
-    def legal_actions(self, role):
+    def legal_actions(self, role, persistent=False):
         """An iterator of legal actions for role in the current state."""
         action = Term()
         action_query = Term.from_cons_functor(
             self._legal_functor, Term.from_atom(role), action)
         with self._query(action_query) as q:
-            yield from q.term_assignments(action, persistent=False)
+            yield from q.term_assignments(action, persistent=persistent)
 
-    def state_terms(self):
+    def state_terms(self, persistent=False):
         """Iterator of the base terms that are true for this state."""
         state_term = Term()
         base_term_query = Term.from_cons_functor(
@@ -312,7 +318,7 @@ class GeneralGameState(object):
         true_term_query = Term.from_cons_functor(
             self._true_functor, state_term)
         with self._query(base_term_query, true_term_query) as q:
-            yield from q.term_assignments(state_term, persistent=False)
+            yield from q.term_assignments(state_term, persistent=persistent)
 
     def is_terminal(self):
         """True if the current game state is terminal."""

@@ -1336,16 +1336,16 @@ PL_erase.restype = None
 # PL_EXPORT(char *)     PL_record_external(term_t t, size_t *size);
 PL_record_external = _lib.PL_record_external
 PL_record_external.argtypes = [term_t, POINTER(c_size_t)]
-PL_record_external.restype = c_char_p
+PL_record_external.restype = POINTER(c_char)
 
 # PL_EXPORT(int)        PL_recorded_external(const char *rec, term_t term);
 PL_recorded_external = _lib.PL_recorded_external
-PL_recorded_external.argtypes = [c_char_p, term_t]
+PL_recorded_external.argtypes = [POINTER(c_char), term_t]
 PL_recorded_external.restype = c_int
 
 # PL_EXPORT(int)        PL_erase_external(char *rec);
 PL_erase_external = _lib.PL_erase_external
-PL_erase_external.argtypes = [c_char_p]
+PL_erase_external.argtypes = [POINTER(c_char)]
 PL_erase_external.restype = c_int
 
 

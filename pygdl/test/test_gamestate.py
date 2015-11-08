@@ -117,8 +117,9 @@ class BaseTestGeneralGame(object):
         for role in self.roles:
             role_object = self.game.role_object(role)
             assert_equal(
-                sorted([str(move) for move
-                        in list(self.game.all_actions(role_object))]),
+                sorted([str(move.get()) for move
+                        in list(self.game.all_actions(role_object,
+                                                      persistent=True))]),
                 sorted(list(self.actions[role])))
 
     def test_base_terms_iterating(self):
@@ -128,7 +129,8 @@ class BaseTestGeneralGame(object):
 
     def test_base_terms_not_iterating(self):
         assert_equal(
-            sorted([str(term) for term in list(self.game.base_terms())]),
+            sorted([str(term.get()) for term
+                    in list(self.game.base_terms(persistent=True))]),
             sorted(list(self.base_terms)))
 
     def test_max_utility(self):
@@ -184,8 +186,9 @@ class TestGeneralGameStateButtonsAndLights(object):
 
     def test_legal_actions_not_iterating(self):
         assert_equal(
-            sorted([str(move) for move
-                    in list(self.initial_state.legal_actions(self.role))]),
+            sorted([str(move.get()) for move
+                    in list(self.initial_state.legal_actions(
+                        self.role, persistent=True))]),
             sorted(['a', 'b', 'c']))
 
     def test_state_terms_iterating(self):
@@ -195,8 +198,8 @@ class TestGeneralGameStateButtonsAndLights(object):
 
     def test_state_terms_not_iterating(self):
         assert_equal(
-            sorted([str(term) for term
-                    in list(self.initial_state.state_terms())]),
+            sorted([str(term.get()) for term
+                    in list(self.initial_state.state_terms(persistent=True))]),
             sorted(['1']))
 
     def test_is_terminal(self):

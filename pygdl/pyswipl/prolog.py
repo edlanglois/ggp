@@ -195,10 +195,23 @@ class HandleWrapper(object):
 
 class TemporaryHandleMixIn(object):
     """Mixin for `HandleWrapper` where the handle can be invalidated."""
+    _valid = True
+
+    def __init__(self):
+        super().__init__()
+
+    def _get_handle(self):
+        if self._valid:
+            return self.__handle
+        raise AttributeError('handle been invalidated!')
+
+    def _set_handle(self, handle):
+        self.__handle = handle
+
+    _handle = property(fget=_get_handle, fset=_set_handle)
+
     def invalidate(self):
-        # TODO: Find a way that gives a more informative error message.
-        # Using __get__?
-        del self._handle
+        self._valid = False
 
 
 class ConstantHandleToConstantMixIn(object):
@@ -208,6 +221,11 @@ class ConstantHandleToConstantMixIn(object):
     """
     def __hash__(self):
         return hash(self._handle)
+
+
+def _decode_ptr_len_string(ptr, length, encoding='utf8'):
+    """Decode a string from a ctypes pointer and length."""
+    return ptr[:length.value].decode(encoding)
 
 
 class Term(HandleWrapper):
@@ -384,11 +402,6 @@ class Term(HandleWrapper):
                 a=('an' if type_str[0].lower() in 'aeiou' else 'a'),
                 type=type_str))
 
-    @staticmethod
-    def _decode_ptr_len_string(ptr, length, encoding='utf8'):
-        """Decode a string from a ctypes pointer and length."""
-        return ptr[:length.value].decode(encoding)
-
     def get_atom(self):
         """An `Atom` object representing this term, if it is a prolog atom."""
         a = atom_t()
@@ -404,7 +417,7 @@ class Term(HandleWrapper):
         self._require_success_expecting_type(
             PL_get_atom_nchars(self._handle, byref(length), byref(s)),
             'atom')
-        return self._decode_ptr_len_string(s, length)
+        return _decode_ptr_len_string(s, length)
 
     def get_string_chars(self):
         """The value of this term as a string, if it is a prolog string."""
@@ -413,7 +426,7 @@ class Term(HandleWrapper):
         self._require_success_expecting_type(
             PL_get_string_chars(self._handle, byref(s), byref(length)),
             'string')
-        return self._decode_ptr_len_string(s, length)
+        return _decode_ptr_len_string(s, length)
 
     def get_chars(self):
         """Representation of this term as a string in Prolog syntax."""
@@ -424,7 +437,7 @@ class Term(HandleWrapper):
                           byref(length),
                           byref(s),
                           CVT_WRITE | BUF_DISCARDABLE | REP_UTF8))
-        return self._decode_ptr_len_string(s, length, encoding='utf8')
+        return _decode_ptr_len_string(s, length, encoding='utf8')
 
     def get_integer(self):
         """The value of this term as an integer, if it is an integer or
@@ -525,7 +538,7 @@ class Term(HandleWrapper):
             AssertionError: If `index` is out of bounds or
                 if this term is not compound.
         """
-        t = term_t()
+        t = term_t()  # TODO: Term() instead?
         self._require_success(
             PL_get_arg(index + 1, self._handle, t))
         return Term._from_handle(t.value)
@@ -1177,7 +1190,7 @@ def _get_nullable_handle(handle_wrapper):
         return handle_wrapper._handle
 
 
-def TermRecord(HandleWrapper):
+class TermRecord(HandleWrapper):
     """Records a Prolog Term so that it can be retreived later.
 
     This persists across backtracks, unlike `Term` itself.
@@ -1196,11 +1209,11 @@ def TermRecord(HandleWrapper):
         Returns:
             Term: A copy of the stored term.
         """
-        t = term_t()
-        success = PL_recorded(self._handle, t)
+        t = Term()
+        success = PL_recorded(self._handle, t._handle)
         if not success:
             raise PrologMemoryError()
-        return Term._from_handle(t)
+        return t
 
     def __del__(self):
         PL_erase(self._handle)
