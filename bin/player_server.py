@@ -5,16 +5,18 @@ import inspect
 import logging
 
 from pygdl.players import (
-    PlayerFactory,
+    AlphaBeta,
     CompulsiveDeliberation,
     Legal,
     Minimax,
+    PlayerFactory,
     Random,
     SequentialPlanner,
 )
 player_classes = [
-    Legal,
+    AlphaBeta,
     CompulsiveDeliberation,
+    Legal,
     Minimax,
     Random,
     SequentialPlanner,

@@ -4,12 +4,13 @@ import random
 import itertools
 
 __all__ = [
+    'AlphaBeta',
     'CompulsiveDeliberation',
+    'GamePlayer',
     'Legal',
     'Minimax',
     'ParameterDescription',
     'PlayerFactory',
-    'GamePlayer',
     'Random',
     'SearchPlayer',
     'SequentialPlanner',
@@ -125,15 +126,20 @@ class Random(GamePlayer):
 
 
 class SearchPlayer(GamePlayer):
-    def score_estimate_and_move_sequence(self, game_state):
+    def score_estimate_and_move_sequence(self, game_state, **kwargs):
         raise NotImplementedError
+
+    def init_score_estimate_kwargs(self):
+        return {}
 
     def get_best_move_sequence(self):
         _, move_sequence = self.get_best_score_and_move_sequence()
         return move_sequence
 
     def get_best_score_and_move_sequence(self):
-        return self.score_estimate_and_move_sequence(game_state=self.game_state)
+        return self.score_estimate_and_move_sequence(
+            game_state=self.game_state,
+            **self.init_score_estimate_kwargs())
 
     def extract_own_move(self, move_sequence_element):
         try:
@@ -207,7 +213,10 @@ class Minimax(SearchPlayer):
         self.max_utility = self.game.max_utility()
         self.min_utility = self.game.min_utility()
 
-    def score_estimate_and_move_sequence(self, game_state):
+    def init_score_estimate_kwargs(self):
+        return {'prev_min_step_score': self.max_utility + 1}
+
+    def score_estimate_and_move_sequence(self, game_state, prev_min_step_score):
         if game_state.is_terminal():
             return game_state.utility(self.role), ()
 
@@ -229,7 +238,8 @@ class Minimax(SearchPlayer):
             for other_roles_moves in itertools.product(*other_roles_move_lists):
                 moves = dict(other_roles_moves + ((self.role, own_move),))
                 score, move_sequence = self.score_estimate_and_move_sequence(
-                    game_state=game_state.apply_moves(moves))
+                    game_state=game_state.apply_moves(moves),
+                    prev_min_step_score=min_step_score)
                 assert score >= self.min_utility
                 assert score <= self.max_utility
 
@@ -238,7 +248,7 @@ class Minimax(SearchPlayer):
                     min_step_score = score
                     min_step_score_move_sequence = (moves,) + move_sequence
 
-                if min_step_score == self.min_utility:
+                if self.min_step_break(score, max_step_score):
                     break
 
             # Max
@@ -246,244 +256,29 @@ class Minimax(SearchPlayer):
                 max_step_score = min_step_score
                 max_step_score_move_sequence = min_step_score_move_sequence
 
-            if max_step_score == self.max_utility:
+            if self.max_step_break(score, prev_min_step_score):
                 break
 
         return max_step_score, max_step_score_move_sequence
 
+    def min_step_break(self, score, max_step_score):
+        return score == self.min_utility
 
-# class SearchPlayer(GamePlayer):
-#     def __init__(self, game, role, start_clock, play_clock):
-#         super().__init__(game, role, start_clock, play_clock)
-#         self.players = tuple(str(role_)
-#                              for role_ in self.game.roles())
-#         self.own_player_index = self.players.index(self.role)
-#
-#     def succesor_player_index(self, player_index):
-#         return (player_index + 1) % len(self.players)
-#
-#     def recursive_per_player_search(self, depth, player_index,
-#                                     *search_args, **search_kwargs):
-#         """Search in which one recursive call is made per player turn.
-#
-#         It is assumed that this player's turn is first.
-#         Turns are taken just at the start of the recursive call corresponding
-#         to the current player's turn (except on the first call).
-#         """
-#         self.logger.debug("Search %s %s", depth, player_index)
-#         is_own_turn = player_index == self.own_player_index
-#         # TODO: Requires re-write
-#
-#         if is_own_turn and depth > 0:
-#             mustUndoTurn = True
-#             self.logger.debug("Next turn")
-#             self.game_state.next_turn()
-#         else:
-#             mustUndoTurn = False
-#             if depth == 0:
-#                 assert is_own_turn
-#
-#         try:
-#             current_role = self.players[player_index]
-#             is_terminal = self.game_state.is_terminal()
-#             moves = tuple(self.game_state.legal_actions(current_role))
-#             return self.search_for_move(depth=depth,
-#                                         player_index=player_index,
-#                                         current_role=current_role,
-#                                         is_own_turn=is_own_turn,
-#                                         is_terminal=is_terminal,
-#                                         moves=moves,
-#                                         *search_args,
-#                                         **search_kwargs)
-#
-#         finally:
-#             if mustUndoTurn:
-#                 self.logger.debug("Undo turn")
-#                 self.game_state.previous_turn()
-#
-#     def move_and_recursive_search(self, move, depth, player_index,
-#                                  current_role, *search_args, **search_kwargs):
-#         """Make a move and return result of recursive_per_player_search
-#
-#        Implementations of search_for_move should call this instead of directly
-#         calling recursive_per_player_search.
-#         """
-#         self.logger.debug("%s:\t%s", str(current_role), str(move))
-#         self.game_state.set_move(current_role, move)
-#         return self.recursive_per_player_search(
-#             depth=(depth + int(player_index == self.own_player_index)),
-#             player_index=self.succesor_player_index(player_index),
-#             *search_args,
-#             **search_kwargs)
-#
-#     def get_current_state_utility(self):
-#         return self.game_state.get_utility(self.role)
-#
-#     def get_best_move_without_search(self, moves, score_required):
-#         """Attemps to find the best move without search.
-#
-#         Returns (found, move, score)
-#         found is true if a move was found.
-#         move and score are None if no move was found.
-#         score may be None even if a move was found.
-#         """
-#         assert moves
-#         if score_required and len(moves) == 0:
-#             return True, moves[0], None
-#         return False, None, None
-#
-#     def search_for_move(self,
-#                         depth,
-#                         player_index,
-#                         current_role,
-#                         is_own_turn,
-#                         is_terminal,
-#                         moves,
-#                         *search_args,
-#                         **search_kwargs):
-#         raise NotImplementedError
-#
-#
-# class Minimax(SearchPlayer):
-#     """Runs Minimax algorithm to decide each move."""
-#     def search_for_move(self,
-#                         depth,
-#                         player_index,
-#                         current_role,
-#                         is_own_turn,
-#                         is_terminal,
-#                         moves,
-#                         score_required):
-#         if is_terminal:
-#             return self.get_current_state_utility(), None
-#
-#         found, move, score = self.get_best_move_without_search(moves,
-#                                                                score_required)
-#         if found:
-#             return move, score
-#
-#         if is_own_turn:
-#             best_score = float('-Inf')
-#             best_possible_score = self.MAX_SCORE
-#
-#             def is_better_score(new, cur):
-#                 return new > cur
-#         else:
-#             best_score = float('Inf')
-#             best_possible_score = self.MIN_SCORE
-#
-#             def is_better_score(new, cur):
-#                 return new < cur
-#
-#         best_move = None
-#         for move in moves:
-#             score, _ = self.move_and_recursive_search(
-#                 move=move,
-#                 depth=depth,
-#                 player_index=player_index,
-#                 current_role=current_role,
-#                 score_required=True
-#             )
-#             assert score >= self.MIN_SCORE
-#             assert score <= self.MAX_SCORE
-#
-#             if is_better_score(score, best_score):
-#                 best_score = score
-#                 best_move = move
-#
-#             if best_score == best_possible_score:
-#                 break
-#
-#         return best_score, best_move
-#
-#     def get_move(self):
-#         _, move = self.recursive_per_player_search(
-#             depth=0,
-#             player_index=self.own_player_index,
-#             score_required=False)
-#         return move
-#
-#
-# class AlphaBeta(SearchPlayer):
-#     """Runs Minimax algorithm with Alpha-Beta pruning to decide each move."""
-#     def search_for_move(self,
-#                         depth,
-#                         player_index,
-#                         current_role,
-#                         is_own_turn,
-#                         is_terminal,
-#                         moves,
-#                         score_required,
-#                         alpha,
-#                         beta):
-#         if is_terminal:
-#             return self.get_current_state_utility(), None
-#
-#         found, move, score = self.get_best_move_without_search(moves,
-#                                                                score_required)
-#         if found:
-#             return move, score
-#
-#         if is_own_turn:
-#             best_score = float('-Inf')
-#             best_possible_score = self.MAX_SCORE
-#
-#             def is_better_score(new, cur):
-#                 return new > cur
-#
-#             def update_alpha_beta(alpha, beta, best_score):
-#                 return max(alpha, best_score), beta
-#
-#         else:
-#             best_score = float('Inf')
-#             best_possible_score = self.MIN_SCORE
-#
-#             def is_better_score(new, cur):
-#                 return new < cur
-#
-#             def update_alpha_beta(alpha, beta, best_score):
-#                 return alpha, min(beta, best_score)
-#
-#         best_move = None
-#         for move in moves:
-#             score, _ = self.move_and_recursive_search(
-#                 move=move,
-#                 depth=depth,
-#                 player_index=player_index,
-#                 current_role=current_role,
-#                 score_required=score_required,
-#                 alpha=alpha,
-#                 beta=beta)
-#             assert score >= self.MIN_SCORE
-#             assert score <= self.MAX_SCORE
-#
-#             if is_better_score(score, best_score):
-#                 best_score = score
-#                 best_move = move
-#
-#                 if score > best_score:
-#                     best_score = score
-#                     best_move = move
-#                     alpha, beta = update_alpha_beta(alpha, beta, best_score)
-#
-#                 if alpha >= beta:
-#                     break
-#
-#                 if best_score == best_possible_score:
-#                     break
-#
-#         return best_score, best_move
-#
-#     def get_move(self):
-#         _, move = self.recursive_per_player_search(
-#             depth=0,
-#             player_index=self.own_player_index,
-#             score_required=False,
-#             alpha=float('-Inf'),
-#             beta=float('Inf'))
-#         return move
-#
-#
+    def max_step_break(self, score, min_step_score):
+        return score == self.max_utility
+
+
+class AlphaBeta(Minimax):
+    """Runs Minimax algorithm with Alpha-Beta pruning to decide each move."""
+    def min_step_break(self, score, max_step_score):
+        return (score == self.min_utility or  # Can't get any lower.
+                score <= max_step_score)  # Will be rejected by prev. max step.
+
+    def max_step_break(self, score, min_step_score):
+        return (score == self.max_utility or  # Can't get any higher.
+                score >= min_step_score)  # Will be rejected by prev. min step.
+
+
 # class BoundedDepth(AlphaBeta):
 #     """Runs bounded depth search on each move."""
 #
