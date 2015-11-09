@@ -133,12 +133,14 @@ class SearchPlayer(GamePlayer):
         return {}
 
     def get_best_move_sequence(self):
-        _, move_sequence = self.get_best_score_and_move_sequence()
+        _, move_sequence = self.get_best_score_and_move_sequence(
+            score_matters=False)
         return move_sequence
 
-    def get_best_score_and_move_sequence(self):
+    def get_best_score_and_move_sequence(self, score_matters=True):
         return self.score_estimate_and_move_sequence(
             game_state=self.game_state,
+            score_matters=score_matters,
             **self.init_score_estimate_kwargs())
 
     def extract_own_move(self, move_sequence_element):
@@ -148,9 +150,17 @@ class SearchPlayer(GamePlayer):
             return move_sequence_element
 
     def get_move(self):
-        score, move_sequence = self.get_best_score_and_move_sequence()
-        logger.debug("Score: {}".format(score))
-        logger.debug("Move sequence: {}".format(move_sequence))
+        score, move_sequence = self.get_best_score_and_move_sequence(
+            score_matters=False)
+        logger.debug('Score: {}'.format(score))
+        logger.debug('Move sequence:')
+        for move in move_sequence:
+            try:
+                logger.debug('\t{}'.format('\t'.join(
+                    '{!s}: {!s}'.format(*item) for item in move.items())))
+            except AttributeError:
+                logger.debug('\t{!s}'.format(move))
+
         return self.extract_own_move(move_sequence[0])
 
 
@@ -214,23 +224,38 @@ class Minimax(SearchPlayer):
         self.min_utility = self.game.min_utility()
 
     def init_score_estimate_kwargs(self):
-        return {'prev_min_step_score': self.max_utility + 1}
+        return {'prev_min_step_score': self.max_utility + 1,
+                'depth': 0}
 
-    def score_estimate_and_move_sequence(self, game_state, prev_min_step_score):
-        if game_state.is_terminal():
-            return game_state.utility(self.role), ()
+    def score_estimate_and_move_sequence(self,
+                                         game_state,
+                                         score_matters,
+                                         depth,
+                                         prev_min_step_score):
+
+        non_rec_found, non_rec_estimate, non_rec_moves = \
+            self.non_recursive_score_estimate_and_move_sequence(
+                game_state, depth=depth)
+        if non_rec_found:
+            return non_rec_estimate, non_rec_moves
+
+        own_moves = tuple(
+            action.get() for action
+            in tuple(game_state.legal_actions(self.role, persistent=True)))
+        assert own_moves
+
+        if not score_matters and len(own_moves) == 1:
+            return None, (own_moves[0],)
 
         other_roles_move_lists = tuple(
             tuple((role, move_record.get()) for move_record
                   in tuple(game_state.legal_actions(role, persistent=True)))
             for role in self.other_roles)
+        assert all(move_list for move_list in other_roles_move_lists)
 
         max_step_score = self.min_utility - 1
         max_step_score_move_sequence = ()
 
-        own_moves = tuple(
-            action.get() for action
-            in tuple(game_state.legal_actions(self.role, persistent=True)))
         for own_move in own_moves:
             min_step_score = self.max_utility + 1
             min_step_score_move_sequence = ()
@@ -239,6 +264,8 @@ class Minimax(SearchPlayer):
                 moves = dict(other_roles_moves + ((self.role, own_move),))
                 score, move_sequence = self.score_estimate_and_move_sequence(
                     game_state=game_state.apply_moves(moves),
+                    score_matters=True,
+                    depth=(depth + 1),
                     prev_min_step_score=min_step_score)
                 assert score >= self.min_utility
                 assert score <= self.max_utility
@@ -256,7 +283,7 @@ class Minimax(SearchPlayer):
                 max_step_score = min_step_score
                 max_step_score_move_sequence = min_step_score_move_sequence
 
-            if self.max_step_break(score, prev_min_step_score):
+            if self.max_step_break(max_step_score, prev_min_step_score):
                 break
 
         return max_step_score, max_step_score_move_sequence
@@ -266,6 +293,11 @@ class Minimax(SearchPlayer):
 
     def max_step_break(self, score, min_step_score):
         return score == self.max_utility
+
+    def non_recursive_score_estimate_and_move_sequence(self, game_state, depth):
+        if game_state.is_terminal():
+            return True, game_state.utility(self.role), ()
+        return False, None, None
 
 
 class AlphaBeta(Minimax):
@@ -279,71 +311,55 @@ class AlphaBeta(Minimax):
                 score >= min_step_score)  # Will be rejected by prev. min step.
 
 
-# class BoundedDepth(AlphaBeta):
-#     """Runs bounded depth search on each move."""
-#
-#     PARAMETER_DESCRIPTIONS = OrderedDict([
-#         ('max_depth', ParameterDescription(
-#             type=int, help='Maximum search depth.')),
-#         ('heuristic', ParameterDescription(
-#             type=str, choices=['zero', 'utility', 'mobility'],
-#             help='Heuristic method.')),
-#     ])
-#
-#     def __init__(self, game_state, role, start_clock, play_clock, max_depth,
-#                  heuristic):
-#         super().__init__(game_state, role, start_clock, play_clock)
-#         self.max_depth = max_depth
-#         self.heuristic = heuristic
-#
-#         roles = list(self.game_state.get_roles())
-#         self.num_possible_moves = {
-#             str(role_): len(set(self.game_state.get_all_moves(role_)))
-#             for role_ in roles
-#         }
-#
-#     def search_for_move(self,
-#                         depth,
-#                         player_index,
-#                         current_role,
-#                         is_own_turn,
-#                         is_terminal,
-#                         moves,
-#                         score_required,
-#                         alpha,
-#                         beta):
-#
-#         if not is_terminal and depth > self.max_depth:
-#             return self.current_state_heuristic(), None
-#         else:
-#             return super().search_for_move(depth,
-#                                            player_index,
-#                                            current_role,
-#                                            is_own_turn,
-#                                            is_terminal,
-#                                            moves,
-#                                            score_required,
-#                                            alpha,
-#                                            beta)
-#
-#     def current_state_heuristic(self):
-#         if self.heuristic == 'zero':
-#             h = self.heuristic_zero()
-#         elif self.heuristic == 'utility':
-#             h = self.heuristic_utility()
-#         elif self.heuristic == 'mobility':
-#             h = self.heuristic_mobility()
-#         else:
-#             raise AssertionError
-#         self.logger.debug("Heuristic: %s", h)
-#         return h
-#
-#     def heuristic_zero(self):
-#         return 0
-#
-#     def heuristic_utility(self):
-#         return self.game_state.get_utility(self.role)
-#
-#     def heuristic_mobility(self):
-#         return (float(len(set(self.game_state.legal_actions(self.role)))) /
-#                 self.num_possible_moves[str(self.role)])
+class BoundedDepth(AlphaBeta):
+    """Runs bounded depth search on each move."""
+
+    PARAMETER_DESCRIPTIONS = OrderedDict([
+        ('max_depth', ParameterDescription(
+            type=int, help='Maximum search depth.')),
+        ('heuristic', ParameterDescription(
+            type=str, choices=['zero', 'utility', 'mobility'],
+            help='Heuristic method.')),
+    ])
+
+    def __init__(self, game, role, start_clock, play_clock, max_depth,
+                 heuristic):
+        super().__init__(game, role, start_clock, play_clock)
+        self.max_depth = max_depth
+        self.logger.debug('Max depth: {}'.format(max_depth))
+
+        if heuristic == 'zero':
+            self.heuristic_function = self.heuristic_zero
+        elif heuristic == 'utility':
+            self.heuristic_function = self.heuristic_utility
+        elif heuristic == 'mobility':
+            self.heuristic_function = self.heuristic_mobility
+        else:
+            raise ValueError('Unknown heuristic {}'.format(heuristic))
+
+        self.num_possible_moves = {
+            str(role_): len(set(
+                str(action)
+                for action in self.game.all_actions(role_, persistent=False)))
+            for role_ in self.roles
+        }
+
+    def non_recursive_score_estimate_and_move_sequence(self, game_state, depth):
+        if game_state.is_terminal():
+            return True, game_state.utility(self.role), ()
+        elif depth >= self.max_depth:
+            return True, self.heuristic_function(game_state), ()
+        else:
+            return False, None, None
+
+    def heuristic_zero(self, game_state):
+        return 0
+
+    def heuristic_utility(self, game_state):
+        return game_state.utility(self.role)
+
+    def heuristic_mobility(self, game_state):
+        return (
+            len(set(str(action) for action
+                in game_state.legal_actions(self.role, persistent=False))) /
+            self.num_possible_moves[str(self.role)])

@@ -6,6 +6,7 @@ import logging
 
 from pygdl.players import (
     AlphaBeta,
+    BoundedDepth,
     CompulsiveDeliberation,
     Legal,
     Minimax,
@@ -15,6 +16,7 @@ from pygdl.players import (
 )
 player_classes = [
     AlphaBeta,
+    BoundedDepth,
     CompulsiveDeliberation,
     Legal,
     Minimax,
