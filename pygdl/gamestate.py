@@ -11,9 +11,17 @@ from pygdl.pyswipl.prolog import (
     Query,
     Term,
     TermList,
+    TermRecord as ActionRecord,
 )
 from pygdl.languages.prolog import PrologList
 from pygdl.paths import prolog_dir
+
+__all__ = [
+    'GeneralGameManager',
+    'GeneralGame',
+    'GeneralGameState',
+    'ActionRecord',
+]
 
 logger = logging.getLogger(__name__)
 

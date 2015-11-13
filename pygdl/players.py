@@ -1,7 +1,11 @@
 from collections import OrderedDict
+import datetime
+import itertools
 import logging
 import random
-import itertools
+import signal
+
+from pygdl.gamestate import ActionRecord
 
 __all__ = [
     'AlphaBeta',
@@ -103,6 +107,25 @@ class GamePlayer(object):
         self.logger.info('Aborting game.')
 
 
+class TimedTurnMixin(object):
+    def start_turn(self, buffer_seconds=1):
+        signal.alarm(self.play_clock.seconds - buffer_seconds)
+
+    def end_turn(self):
+        signal.alarm(0)
+
+
+class TurnTimeUp(Exception):
+    pass
+
+
+def turn_alarm_handler(signum, frame):
+    raise TurnTimeUp()
+
+
+signal.signal(signal.SIGALRM, turn_alarm_handler)
+
+
 class Legal(GamePlayer):
     """Plays the first legal move."""
     def get_move(self):
@@ -113,16 +136,27 @@ class Legal(GamePlayer):
             actions.close()
 
 
+def random_action(game_state, role, as_string):
+    random_action = None
+    for i, action in enumerate(
+            game_state.legal_actions(role, persistent=False)):
+        if random.randint(0, i) == 0:
+            if as_string:
+                random_action = str(action)
+            else:
+                random_action = ActionRecord(action)
+
+    if as_string:
+        return random_action
+    else:
+        return random_action.get()
+
+
 class Random(GamePlayer):
     """Plays a random legal move."""
     def get_move(self):
-        random_action = None
-        for i, action in enumerate(
-                self.game_state.legal_actions(self.role, persistent=False)):
-            if random.randint(0, i) == 0:
-                random_action = str(action)
-
-        return random_action
+        return random_action(game_state=self.game_state, role=self.role,
+                             as_string=True)
 
 
 class SearchPlayer(GamePlayer):
@@ -311,7 +345,7 @@ class AlphaBeta(Minimax):
                 score >= min_step_score)  # Will be rejected by prev. min step.
 
 
-class BoundedDepth(AlphaBeta):
+class BoundedDepth(Minimax):
     """Runs bounded depth search on each move."""
 
     PARAMETER_DESCRIPTIONS = OrderedDict([
@@ -328,7 +362,9 @@ class BoundedDepth(AlphaBeta):
         self.max_depth = max_depth
         self.logger.debug('Max depth: {}'.format(max_depth))
 
-        if heuristic == 'zero':
+        if callable(heuristic):
+            self.heuristic_function = heuristic
+        elif heuristic == 'zero':
             self.heuristic_function = self.heuristic_zero
         elif heuristic == 'utility':
             self.heuristic_function = self.heuristic_utility
@@ -363,3 +399,33 @@ class BoundedDepth(AlphaBeta):
             len(set(str(action) for action
                 in game_state.legal_actions(self.role, persistent=False))) /
             self.num_possible_moves[str(self.role)])
+
+
+class MonteCarlo(BoundedDepth):
+    """Runs bounded depth search with Monte Carlo heuristic."""
+
+    PARAMETER_DESCRIPTIONS = OrderedDict([
+        ('max_depth', BoundedDepth.PARAMETER_DESCRIPTIONS['max_depth']),
+        ('num_probes', ParameterDescription(
+            type=int,
+            help='Number of probes to make once max_depth is reached.'))
+    ])
+
+    def __init__(self, game, role, start_clock, play_clock, max_depth,
+                 num_probes):
+        super().__init__(game=game, role=role, start_clock=start_clock,
+                         play_clock=play_clock, max_depth=max_depth,
+                         heuristic=self.heuristic_monte_carlo)
+        self.num_probes = num_probes
+
+    def heuristic_monte_carlo(self, game_state):
+        return (sum(self.probe(game_state) for _ in range(self.num_probes)) /
+                self.num_probes)
+
+    def probe(self, game_state):
+        if game_state.is_terminal():
+            return game_state.utility(self.role)
+
+        return self.probe(game_state.apply_moves({
+            role: random_action(game_state, role, as_string=False)
+            for role in self.roles}))

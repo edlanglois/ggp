@@ -10,6 +10,7 @@ from pygdl.players import (
     CompulsiveDeliberation,
     Legal,
     Minimax,
+    MonteCarlo,
     PlayerFactory,
     Random,
     SequentialPlanner,
@@ -20,6 +21,7 @@ player_classes = [
     CompulsiveDeliberation,
     Legal,
     Minimax,
+    MonteCarlo,
     Random,
     SequentialPlanner,
 ]
