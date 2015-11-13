@@ -1,5 +1,4 @@
 from collections import OrderedDict
-import datetime
 import itertools
 import logging
 import random
@@ -90,6 +89,9 @@ class GamePlayer(object):
 
         self.logger.debug("GAME DESCRIPTION FOR TURN %s",
                           self.game_state.turn_number())
+        for role in self.roles:
+            logger.debug('Utility for {role!s}: {utility!s}'.format(
+                role=role, utility=self.game_state.utility(role)))
         for base in self.game_state.state_terms(persistent=False):
             self.logger.debug("\t%s", str(base))
 
@@ -126,14 +128,18 @@ def turn_alarm_handler(signum, frame):
 signal.signal(signal.SIGALRM, turn_alarm_handler)
 
 
+def first_action(game_state, role):
+    actions = game_state.legal_actions(role, persistent=False)
+    try:
+        return str(next(actions))
+    finally:
+        actions.close()
+
+
 class Legal(GamePlayer):
     """Plays the first legal move."""
     def get_move(self):
-        actions = self.game_state.legal_actions(self.role, persistent=False)
-        try:
-            return str(next(actions))
-        finally:
-            actions.close()
+        return first_action(self.game_state, self.role)
 
 
 def random_action(game_state, role, as_string):
@@ -273,12 +279,14 @@ class Minimax(SearchPlayer):
         if non_rec_found:
             return non_rec_estimate, non_rec_moves
 
-        own_moves = tuple(
+        own_moves = [
             action.get() for action
-            in tuple(game_state.legal_actions(self.role, persistent=True)))
+            in tuple(game_state.legal_actions(self.role, persistent=True))]
         assert own_moves
+        random.shuffle(own_moves)  # Avoid bias in case of score ties.
 
         if not score_matters and len(own_moves) == 1:
+            self.notify_trivial_turn()
             return None, (own_moves[0],)
 
         other_roles_move_lists = tuple(
@@ -333,6 +341,9 @@ class Minimax(SearchPlayer):
             return True, game_state.utility(self.role), ()
         return False, None, None
 
+    def notify_trivial_turn(self):
+        pass
+
 
 class AlphaBeta(Minimax):
     """Runs Minimax algorithm with Alpha-Beta pruning to decide each move."""
@@ -345,12 +356,13 @@ class AlphaBeta(Minimax):
                 score >= min_step_score)  # Will be rejected by prev. min step.
 
 
-class BoundedDepth(Minimax):
+class BoundedDepth(Minimax, TimedTurnMixin):
     """Runs bounded depth search on each move."""
 
     PARAMETER_DESCRIPTIONS = OrderedDict([
         ('max_depth', ParameterDescription(
-            type=int, help='Maximum search depth.')),
+            type=int,
+            help='Maximum search depth. -1 for iterative deepening.')),
         ('heuristic', ParameterDescription(
             type=str, choices=['zero', 'utility', 'mobility'],
             help='Heuristic method.')),
@@ -399,6 +411,34 @@ class BoundedDepth(Minimax):
             len(set(str(action) for action
                 in game_state.legal_actions(self.role, persistent=False))) /
             self.num_possible_moves[str(self.role)])
+
+    def get_move(self):
+        if self.max_depth == -1:
+            # Perform iterative deepening
+            try:
+                self.start_turn()
+                self.max_depth = 0
+                self.trivial_turn = False
+                action = first_action(self.game_state, self.role)
+                while True:
+                    self.max_depth += 1
+                    self.logger.debug(
+                        'Running to depth {}'.format(self.max_depth))
+                    action = super().get_move()
+                    if self.trivial_turn:
+                        break
+            except TurnTimeUp:
+                self.logger.debug('Time up!')
+            finally:
+                self.max_depth = -1
+                self.end_turn()
+            return action
+
+        else:
+            return super().get_move()
+
+    def notify_trivial_turn(self):
+        self.trivial_turn = True
 
 
 class MonteCarlo(BoundedDepth):
