@@ -396,7 +396,9 @@ class BoundedDepth(Minimax, TimedTurnMixin):
         if game_state.is_terminal():
             return True, game_state.utility(self.role), ()
         elif depth >= self.max_depth:
-            return True, self.heuristic_function(game_state), ()
+            # Scale the heuristic function to 10 - 90 so that
+            # certain wins and losses carry more weight.
+            return True, self.heuristic_function(game_state) * 0.8 + 10, ()
         else:
             return False, None, None
 
