@@ -1,6 +1,8 @@
 from collections import OrderedDict
 import itertools
 import logging
+import math
+import operator
 import random
 import signal
 
@@ -12,6 +14,7 @@ __all__ = [
     'GamePlayer',
     'Legal',
     'Minimax',
+    'MonteCarloTreeSearch',
     'ParameterDescription',
     'PlayerFactory',
     'Random',
@@ -48,7 +51,7 @@ class PlayerFactory(object):
 
 
 class ParameterDescription(object):
-    PARAMS = ['type', 'help', 'choices']
+    PARAMS = ['type', 'help', 'choices', 'default']
 
     def __init__(self, **kwargs):
         super().__init__()
@@ -84,6 +87,11 @@ class GamePlayer(object):
     def player_name(cls):
         return cls.__class__.__name__
 
+    def _moves_dict(self, action_list):
+        assert(len(self.roles) == len(action_list))
+        return {role: self.game.action_object(str(action))
+                for role, action in zip(self.roles, action_list)}
+
     def update_moves(self, new_moves):
         assert(len(self.roles) == len(new_moves))
 
@@ -95,9 +103,7 @@ class GamePlayer(object):
         for base in self.game_state.state_terms(persistent=False):
             self.logger.debug("\t%s", str(base))
 
-        moves = {role: self.game.action_object(str(action))
-                 for role, action in zip(self.roles, new_moves)}
-
+        moves = self._moves_dict(action_list=new_moves)
         self.game_state = self.game_state.apply_moves(moves)
 
     def stop(self):
@@ -109,23 +115,66 @@ class GamePlayer(object):
         self.logger.info('Aborting game.')
 
 
-class TimedTurnMixin(object):
-    def start_turn(self, buffer_seconds=1):
-        signal.alarm(self.play_clock.seconds - buffer_seconds)
+class AlarmContextManager(object):
+    alarm_active = False
 
-    def end_turn(self):
+    def __init__(self, seconds):
+        self.seconds = seconds
+
+    def __enter__(self):
+        signal.alarm(self.seconds)
+        assert not AlarmContextManager.alarm_active, \
+            'Only one alarm may be active at a time.'
+        AlarmContextManager.alarm_active = True
+
+    def __exit__(self, exception_type, exception_value, traceback):
         signal.alarm(0)
+        AlarmContextManager.alarm_active = False
+        if exception_type == TimeUp:
+            return True  # Suppress TimeUp exceptions and continue normally.
 
 
-class TurnTimeUp(Exception):
+class TimeUp(Exception):
     pass
 
 
-def turn_alarm_handler(signum, frame):
-    raise TurnTimeUp()
+def time_up_alarm_handler(signum, frame):
+    raise TimeUp()
 
 
-signal.signal(signal.SIGALRM, turn_alarm_handler)
+signal.signal(signal.SIGALRM, time_up_alarm_handler)
+
+
+class DelayedSignal(object):
+    """Context manager that delays a single signal call."""
+    def __init__(self, signal_number):
+        self.signal_number = signal_number
+
+    def __enter__(self):
+        self.signal_occured = False
+        self.old_handler = signal.signal(self.signal_number, self.handler)
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        self.signal_occured = False
+        signal.signal(self.signal_number, self.old_handler)
+        if self.signal_occured:
+            self.old_handler(self.handler_signum, self.handler_frame)
+
+    def handler(self, signum, frame):
+        assert not self.signal_occured, "Can't delay multiple signals."
+        self.signal_occured = True
+        self.handler_signum = signum
+        self.handler_frame = frame
+
+
+class PlayerTimingMixin(object):
+    def timed_init(self, start_clock, buffer_seconds=1):
+        return AlarmContextManager(
+            seconds=(start_clock.seconds - buffer_seconds))
+
+    def timed_turn(self, buffer_seconds=1):
+        return AlarmContextManager(
+            seconds=(self.play_clock.seconds - buffer_seconds))
 
 
 def first_action(game_state, role):
@@ -144,13 +193,15 @@ class Legal(GamePlayer):
 
 def random_action(game_state, role, as_string):
     random_action = None
+    if as_string:
+        prep_action = str
+    else:
+        prep_action = ActionRecord
+
     for i, action in enumerate(
             game_state.legal_actions(role, persistent=False)):
         if random.randint(0, i) == 0:
-            if as_string:
-                random_action = str(action)
-            else:
-                random_action = ActionRecord(action)
+            random_action = prep_action(action)
 
     if as_string:
         return random_action
@@ -356,7 +407,7 @@ class AlphaBeta(Minimax):
                 score >= min_step_score)  # Will be rejected by prev. min step.
 
 
-class BoundedDepth(Minimax, TimedTurnMixin):
+class BoundedDepth(Minimax, PlayerTimingMixin):
     """Runs bounded depth search on each move."""
 
     PARAMETER_DESCRIPTIONS = OrderedDict([
@@ -417,8 +468,7 @@ class BoundedDepth(Minimax, TimedTurnMixin):
     def get_move(self):
         if self.max_depth == -1:
             # Perform iterative deepening
-            try:
-                self.start_turn()
+            with self.timed_turn():
                 self.max_depth = 0
                 self.trivial_turn = False
                 action = first_action(self.game_state, self.role)
@@ -429,11 +479,8 @@ class BoundedDepth(Minimax, TimedTurnMixin):
                     action = super().get_move()
                     if self.trivial_turn:
                         break
-            except TurnTimeUp:
-                self.logger.debug('Time up!')
-            finally:
-                self.max_depth = -1
-                self.end_turn()
+
+            self.max_depth = -1
             return action
 
         else:
@@ -441,6 +488,25 @@ class BoundedDepth(Minimax, TimedTurnMixin):
 
     def notify_trivial_turn(self):
         self.trivial_turn = True
+
+
+class GameSimulator(object):
+    def __init__(self, role, roles):
+        self.role = role
+        self.roles = roles
+
+    def play_random_game(self, game_state):
+        """Play a random game starting from `game_state`.
+
+        Returns:
+            The utility for `self.role` at the terminal state.
+        """
+        while not game_state.is_terminal():
+            game_state = game_state.apply_moves({
+                role: random_action(game_state, role, as_string=False)
+                for role in self.roles})
+
+        return game_state.utility(self.role)
 
 
 class MonteCarlo(BoundedDepth):
@@ -458,6 +524,7 @@ class MonteCarlo(BoundedDepth):
         super().__init__(game=game, role=role, start_clock=start_clock,
                          play_clock=play_clock, max_depth=max_depth,
                          heuristic=self.heuristic_monte_carlo)
+        self.game_simulator = GameSimulator(role=self.role, roles=self.roles)
         self.num_probes = num_probes
 
     def heuristic_monte_carlo(self, game_state):
@@ -465,9 +532,234 @@ class MonteCarlo(BoundedDepth):
                 self.num_probes)
 
     def probe(self, game_state):
-        if game_state.is_terminal():
-            return game_state.utility(self.role)
+        return self.game_simulator.play_random_game(game_state)
 
-        return self.probe(game_state.apply_moves({
-            role: random_action(game_state, role, as_string=False)
-            for role in self.roles}))
+
+class PartialMoveGameState(object):
+    def __init__(self, game_state, roles=None, moves=None):
+        self.game_state = game_state
+        self._roles = (roles if roles is not None
+                       else tuple(game_state.game.roles()))
+        self._moves = moves if moves is not None else {}
+
+    def apply_partial_move(self, role, action):
+        assert role in self._roles
+        assert role not in self._moves
+        new_moves = self._moves.copy()
+        new_moves[role] = action
+
+        if len(new_moves) == len(self._roles):
+            new_game_state = self.game_state.apply_moves(new_moves)
+            new_moves = {}
+        else:
+            new_game_state = self.game_state
+
+        return PartialMoveGameState(game_state=new_game_state,
+                                    roles=self._roles,
+                                    moves=new_moves)
+
+    def apply_moves(self, moves):
+        raise AttributeError('apply_moves')
+
+    def __getattr__(self, name):
+        return getattr(self.game_state, name)
+
+
+class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
+    """Monte-Carlo Tree Search
+
+    Based on the Upper Confidence Bound 1 applied to Trees (UCT) algorithm.
+    """
+
+    PARAMETER_DESCRIPTIONS = OrderedDict([
+        ('C', ParameterDescription(
+            type=float, default=math.sqrt(2),
+            help='Parameter controlling exploration rate. (default √2)'))
+    ])
+
+    def __init__(self, game, role, start_clock, play_clock, C):
+        with self.timed_init(start_clock, buffer_seconds=2):
+            super().__init__(game=game, role=role, start_clock=start_clock,
+                             play_clock=play_clock)
+            self.C = C
+            self.role_index = self.roles.index(self.role)
+            self.max_utility = self.game.max_utility()
+            self.min_utility = self.game.min_utility()
+            self.root = self._make_root_node()
+            self.game_simulator = GameSimulator(
+                role=self.role, roles=self.roles)
+            while True:
+                self.run_search()
+
+    def get_move(self):
+        with self.timed_turn(buffer_seconds=3):
+            while True:
+                self.run_search()
+
+        for line in self._node_tree_lines(self.root, max_depth=2):
+            self.logger.debug(line)
+        return max(((action, child.times_seen)
+                    for (action, child) in self.root.action_child.items()),
+                   key=operator.itemgetter(1))[0]
+
+    def update_moves(self, new_moves):
+        new_moves_dict = self._moves_dict(new_moves)
+        super().update_moves(new_moves)
+
+        while new_moves_dict:
+            action = str(new_moves_dict.pop(self.root.role))
+
+            try:
+                self.root = self.root.action_child[action]
+            except KeyError:
+                self.root = self._make_root_node()
+                break
+
+        assert self.root.game_state == self.game_state
+
+    def run_search(self):
+        # with DelayedSignal(signal.SIGALRM):
+        #    self.logger.debug('Running search from:')
+        # XXX
+        # for line in self._node_tree_lines(self.root, max_depth=2):
+        #    self.logger.debug(line)
+
+        node = self.root
+        path = [node]
+
+        # Select
+        while not node.unseen_actions and node.action_child:
+            node = self.select_child(node)
+            path.append(node)
+
+        if node.game_state.is_terminal():
+            with DelayedSignal(signal.SIGALRM):
+                self.backpropagate_terminal_node(path=path, node=node)
+            return
+
+        # Expand
+        action = node.get_random_unseen_action()
+
+        leaf_node = node.get_node_for_action(action)
+        path.append(leaf_node)
+
+        # Simulate
+        score = self.simulate_game(leaf_node)
+
+        # Backpropagate
+        with DelayedSignal(signal.SIGALRM):
+            node.attach_child(action=action, child=leaf_node)
+            self.backpropagate_score(path=path, score=score)
+
+    def node_game_state_score(self, node):
+        return self.normalize_score(node.game_state_utility())
+
+    def normalize_score(self, game_utility):
+        """Convert game utility to a score in [0, 1]."""
+        return ((game_utility - self.min_utility) /
+                (self.max_utility - self.min_utility))
+
+    def node_upper_confidence_bound(self, node, log_parent_times_seen):
+        return (float(node.total_score) / node.times_seen +
+                self.C * math.sqrt(log_parent_times_seen / node.times_seen))
+
+    def select_child(self, node):
+        log_times_seen = math.log(node.times_seen)
+        child_nodes = list(node.action_child.values())
+        random.shuffle(child_nodes)
+        return max(
+            ((child, self.node_upper_confidence_bound(child, log_times_seen))
+             for child in child_nodes),
+            key=operator.itemgetter(1))[0]
+
+    def simulate_game(self, node):
+        return self.normalize_score(
+            self.game_simulator.play_random_game(node.game_state.game_state))
+
+    def backpropagate_terminal_node(self, path, node):
+        score = self.node_game_state_score(node)
+        self.backpropagate_score(path=path, score=score)
+        # TODO: Also do Minimax backprop
+
+    def backpropagate_score(self, path, score):
+        for node in path:
+            node.update(score_role=self.role, score=score)
+
+    def _make_root_node(self):
+        return self.Node(game_state=PartialMoveGameState(self.game_state),
+                         role_index=self.role_index,
+                         roles=self.roles)
+
+    @staticmethod
+    def _node_tree_lines(node, depth=0, max_depth=float('Inf')):
+        indent = str(depth) + '  ' * depth
+        yield indent + str(node)
+        if depth + 1 > max_depth:
+            raise StopIteration
+        for action, child in node.action_child.items():
+            yield indent + '>' + str(action)
+            yield from MonteCarloTreeSearch._node_tree_lines(
+                node=child, depth=(depth + 1), max_depth=max_depth)
+
+    class Node(object):
+        def __init__(self, game_state, role_index, roles):
+            self.game_state = game_state
+            self.role_index = role_index
+            self.roles = roles
+            self.role = roles[role_index]
+            self.action_child = {}
+
+            self.unseen_actions = self._get_unseen_actions()
+
+            self.total_score = 0
+            self.times_seen = 0
+
+        def __str__(self):
+            try:
+                role_str = self.role_str
+            except AttributeError:
+                self.role_str = str(self.role)
+                role_str = self.role_str
+
+            try:
+                mean_score = self.total_score / self.times_seen
+            except ZeroDivisionError:
+                mean_score = float('NaN')
+
+            return '{role!s} - {times_seen} - {mean_score}'.format(
+                role=role_str, times_seen=self.times_seen,
+                mean_score=mean_score)
+
+        def get_random_unseen_action(self):
+            return self.unseen_actions.pop().get()
+
+        def game_state_utility(self):
+            return self.game_state.utility(self.role)
+
+        def get_node_for_action(self, action):
+            return MonteCarloTreeSearch.Node(
+                game_state=self.game_state.apply_partial_move(
+                    self.role, action),
+                role_index=((self.role_index + 1) % len(self.roles)),
+                roles=self.roles)
+
+        def attach_child(self, action, child):
+            action_string = str(action)
+            assert action_string not in self.action_child
+            self.action_child[action_string] = child
+
+        def update(self, score_role, score):
+            self.times_seen += 1
+            if score_role == self.role:
+                self.total_score += score
+            else:
+                self.total_score -= score
+
+        def _get_unseen_actions(self):
+            unseen_actions = [
+                ActionRecord(action) for action
+                in self.game_state.legal_actions(
+                    role=self.role, persistent=False)
+                if str(action) not in self.action_child]
+            random.shuffle(unseen_actions)
+            return unseen_actions

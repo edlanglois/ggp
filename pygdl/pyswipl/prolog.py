@@ -242,6 +242,12 @@ class Term(HandleWrapper):
             type=self.type(),
             value=self.get_chars())
 
+    def __eq__(self, other):
+        args = TermList(2)
+        args[0].put_term(self)
+        args[1].put_term(other)
+        return _term_equality_predicate(args)
+
     def __int__(self):
         """Integer representation of this term (if it stores an integer)."""
         return self.get_integer()
@@ -945,7 +951,8 @@ class Predicate(HandleWrapper, ConstantHandleToConstantMixIn):
             module_name (str): Name of module containing the functor.
                 If ``None``, uses the current context module.
         """
-        return cls._from_handle(handle=PL_predicate(name, arity, module_name))
+        return cls._from_handle(handle=PL_predicate(
+            name.encode(), arity, module_name))
 
     def __str__(self):
         info = self.get_info()
@@ -1215,3 +1222,6 @@ class TermRecord(HandleWrapper):
 
     def __del__(self):
         PL_erase(self._handle)
+
+
+_term_equality_predicate = Predicate.from_name_arity(name='==', arity=2)

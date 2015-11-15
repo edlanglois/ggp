@@ -160,7 +160,12 @@ class GeneralGame(object):
 
     def __init__(self, game_manager, game_id):
         self.game_manager = game_manager
+        self.game_id_atom = game_id
         self.game_id = Term.from_atom_name(game_id)
+
+    def __eq__(self, other):
+        return (self.game_manager == other.game_manager and
+                self.game_id_atom == other.game_id_atom)
 
     def initial_state(self):
         """Return the initial state of the game as a GeneralGameState"""
@@ -291,6 +296,10 @@ class GeneralGameState(object):
             self.truth_state = Term.from_term(args[1])
         else:
             self.truth_state = truth_state
+
+    def __eq__(self, other):
+        return (self.game == other.game and
+                self.truth_state == other.truth_state)
 
     def turn_number(self):
         """The current turn number."""

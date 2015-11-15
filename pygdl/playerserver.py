@@ -2,6 +2,7 @@ import datetime
 import errno
 import http.server
 import logging
+import sys
 
 from pygdl.languages.prolog import PrologTerm, UnparsedPrologTerm
 from pygdl.languages.sexpressions import s_expression_parser, SExpression
@@ -234,7 +235,9 @@ def make_general_game_playing_request_handler(message_handler):
                 return 403, None  # 403 Forbidden
             except Exception as e:
                 logger.error(e, exc_info=True)
-                return 500, None  # 500 Internal Server Error
+                self._exception = e
+                self.send_error(500)  # 500 Internal Server Error
+                raise
 
         def do_POST(self):
             response_code, response = self.post_response()
@@ -259,6 +262,15 @@ def make_general_game_playing_request_handler(message_handler):
     return GeneralGamePlayingRequestHandler
 
 
+class ExceptionalHttpServer(http.server.HTTPServer):
+    """Like http.server.HTTPServer but propagates exceptions.
+
+    Encountering an exception kills the server.
+    """
+    def handle_error(self, request, client_address):
+        raise sys.exc_info()[1]
+
+
 def run_player_server(game_manager, player_factory, port=9147,
                       search_for_open_port=False,
                       port_search_max_tries=100):
@@ -269,7 +281,7 @@ def run_player_server(game_manager, player_factory, port=9147,
 
     for attempt_index in range(1,  port_search_max_tries + 1):
         try:
-            server = http.server.HTTPServer(('', port), handler)
+            server = ExceptionalHttpServer(('', port), handler)
             break
         except OSError as e:
             if e.errno == errno.EADDRINUSE:

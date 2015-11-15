@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import faulthandler
 import inspect
 import logging
 
@@ -11,6 +12,7 @@ from pygdl.players import (
     Legal,
     Minimax,
     MonteCarlo,
+    MonteCarloTreeSearch,
     PlayerFactory,
     Random,
     SequentialPlanner,
@@ -22,6 +24,7 @@ player_classes = [
     Legal,
     Minimax,
     MonteCarlo,
+    MonteCarloTreeSearch,
     Random,
     SequentialPlanner,
 ]
@@ -38,6 +41,7 @@ class LogLevel(object):
 
 
 def main():
+    # faulthandler.enable()  # XXX
     parser = argparse.ArgumentParser(description="General Game Player Server")
     parser.add_argument('-P', '--port', type=int, default=9147,
                         help="Port on which the server listens. (default 9147)")
@@ -53,9 +57,13 @@ def main():
     subparsers.required = True
 
     for player in player_classes:
-        player_parser = subparsers.add_parser(player.__name__,
-                                              help=inspect.getdoc(player))
+        player_doc = inspect.getdoc(player)
+        player_help = (player_doc.splitlines()[0] if player_doc is not None
+                       else None)
+        player_parser = subparsers.add_parser(player.__name__, help=player_help)
         for param_name, description in player.PARAMETER_DESCRIPTIONS.items():
+            if 'default' in description.dict:
+                param_name = '--' + param_name
             player_parser.add_argument(param_name, **description.dict)
 
     args = parser.parse_args()
