@@ -122,27 +122,31 @@ class AlarmContextManager(object):
         self.seconds = seconds
 
     def __enter__(self):
-        signal.alarm(self.seconds)
         assert not AlarmContextManager.alarm_active, \
             'Only one alarm may be active at a time.'
+        self.time_up = False
+        self.old_alarm_handler = signal.signal(signal.SIGALRM,
+                                               self.alarm_handler)
         AlarmContextManager.alarm_active = True
+        signal.alarm(self.seconds)
+        return self
 
     def __exit__(self, exception_type, exception_value, traceback):
         signal.alarm(0)
         AlarmContextManager.alarm_active = False
-        if exception_type == TimeUp:
-            return True  # Suppress TimeUp exceptions and continue normally.
+        signal.signal(signal.SIGALRM, self.old_alarm_handler)
+        del self.time_up
+
+    def alarm_handler(self, signum, frame):
+        self.time_up = True
+
+    def check(self):
+        if self.time_up:
+            raise TimeUp()
 
 
 class TimeUp(Exception):
     pass
-
-
-def time_up_alarm_handler(signum, frame):
-    raise TimeUp()
-
-
-signal.signal(signal.SIGALRM, time_up_alarm_handler)
 
 
 class DelayedSignal(object):
@@ -465,20 +469,39 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
                 in game_state.legal_actions(self.role, persistent=False))) /
             self.num_possible_moves[str(self.role)])
 
+    def score_estimate_and_move_sequence(self,
+                                         game_state,
+                                         score_matters,
+                                         depth,
+                                         prev_min_step_score):
+        self.timer.check()
+        super().score_estimate_and_move_sequence(
+            game_state=game_state, score_matters=score_matters,
+            depth=depth, prev_min_step_score=prev_min_step_score)
+
     def get_move(self):
         if self.max_depth == -1:
-            # Perform iterative deepening
-            with self.timed_turn():
+            with self.timed_turn(buffer_seconds=2) as timer:
+                self.timer = timer
                 self.max_depth = 0
                 self.trivial_turn = False
                 action = first_action(self.game_state, self.role)
-                while True:
-                    self.max_depth += 1
-                    self.logger.debug(
-                        'Running to depth {}'.format(self.max_depth))
-                    action = super().get_move()
-                    if self.trivial_turn:
-                        break
+                try:
+                    while True:
+                        timer.check()
+                        self.max_depth += 1
+                        self.logger.debug(
+                            'Running to depth {}'.format(self.max_depth))
+                        action = super().get_move()
+                        if self.trivial_turn:
+                            break
+                except TimeUp:
+                    pass
+
+            try:
+                del self.timer
+            except AttributeError:
+                pass
 
             self.max_depth = -1
             return action
@@ -495,13 +518,14 @@ class GameSimulator(object):
         self.role = role
         self.roles = roles
 
-    def play_random_game(self, game_state):
+    def play_random_game(self, game_state, timer):
         """Play a random game starting from `game_state`.
 
         Returns:
             The utility for `self.role` at the terminal state.
         """
         while not game_state.is_terminal():
+            timer.check()
             game_state = game_state.apply_moves({
                 role: random_action(game_state, role, as_string=False)
                 for role in self.roles})
@@ -532,7 +556,7 @@ class MonteCarlo(BoundedDepth):
                 self.num_probes)
 
     def probe(self, game_state):
-        return self.game_simulator.play_random_game(game_state)
+        return self.game_simulator.play_random_game(game_state, self.timer)
 
 
 class PartialMoveGameState(object):
@@ -578,7 +602,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
     ])
 
     def __init__(self, game, role, start_clock, play_clock, C):
-        with self.timed_init(start_clock, buffer_seconds=2):
+        with self.timed_init(start_clock, buffer_seconds=2) as timer:
             super().__init__(game=game, role=role, start_clock=start_clock,
                              play_clock=play_clock)
             self.C = C
@@ -588,18 +612,34 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
             self.root = self._make_root_node()
             self.game_simulator = GameSimulator(
                 role=self.role, roles=self.roles)
-            while True:
-                self.run_search()
+
+            try:
+                while True:
+                    timer.check()
+                    self.run_search(timer)
+            except TimeUp:
+                pass
 
     def get_move(self):
-        with self.timed_turn(buffer_seconds=3):
-            while True:
-                self.run_search()
+        with self.timed_turn(buffer_seconds=3) as timer:
+            try:
+                while True:
+                    timer.check()
+                    self.run_search(timer)
+            except TimeUp:
+                pass
 
         for line in self._node_tree_lines(self.root, max_depth=2):
             self.logger.debug(line)
-        return max(((action, child.times_seen)
-                    for (action, child) in self.root.action_child.items()),
+
+        x = list((action, child.mean_score())
+                 for (action, child) in self.root.action_child.items()
+                 if child.times_seen > 0)
+        self.logger.debug(
+            '{!s} - {!s}'.format(*max(x, key=operator.itemgetter(1))))
+        return max(((action, child.mean_score())
+                    for (action, child) in self.root.action_child.items()
+                    if child.times_seen > 0),
                    key=operator.itemgetter(1))[0]
 
     def update_moves(self, new_moves):
@@ -617,7 +657,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
 
         assert self.root.game_state == self.game_state
 
-    def run_search(self):
+    def run_search(self, timer):
         # with DelayedSignal(signal.SIGALRM):
         #    self.logger.debug('Running search from:')
         # XXX
@@ -629,12 +669,12 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
 
         # Select
         while not node.unseen_actions and node.action_child:
+            timer.check()
             node = self.select_child(node)
             path.append(node)
 
         if node.game_state.is_terminal():
-            with DelayedSignal(signal.SIGALRM):
-                self.backpropagate_terminal_node(path=path, node=node)
+            self.backpropagate_terminal_node(path=path, node=node)
             return
 
         # Expand
@@ -644,12 +684,11 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
         path.append(leaf_node)
 
         # Simulate
-        score = self.simulate_game(leaf_node)
+        score = self.simulate_game(leaf_node, timer)
 
         # Backpropagate
-        with DelayedSignal(signal.SIGALRM):
-            node.attach_child(action=action, child=leaf_node)
-            self.backpropagate_score(path=path, score=score)
+        node.attach_child(action=action, child=leaf_node)
+        self.backpropagate_score(path=path, score=score)
 
     def node_game_state_score(self, node):
         return self.normalize_score(node.game_state_utility())
@@ -659,8 +698,14 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
         return ((game_utility - self.min_utility) /
                 (self.max_utility - self.min_utility))
 
-    def node_upper_confidence_bound(self, node, log_parent_times_seen):
-        return (float(node.total_score) / node.times_seen +
+    def node_upper_confidence_bound(self, node, perspective_role,
+                                    log_parent_times_seen):
+        if perspective_role == self.role:
+            score_factor = 1
+        else:
+            # Score is for self.role so other roles want it minimized
+            score_factor = -1
+        return (node.mean_score() * score_factor +
                 self.C * math.sqrt(log_parent_times_seen / node.times_seen))
 
     def select_child(self, node):
@@ -668,13 +713,16 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
         child_nodes = list(node.action_child.values())
         random.shuffle(child_nodes)
         return max(
-            ((child, self.node_upper_confidence_bound(child, log_times_seen))
+            ((child, self.node_upper_confidence_bound(
+                node=child,
+                perspective_role=node.role,
+                log_parent_times_seen=log_times_seen))
              for child in child_nodes),
             key=operator.itemgetter(1))[0]
 
-    def simulate_game(self, node):
-        return self.normalize_score(
-            self.game_simulator.play_random_game(node.game_state.game_state))
+    def simulate_game(self, node, timer):
+        return self.normalize_score(self.game_simulator.play_random_game(
+                node.game_state.game_state, timer))
 
     def backpropagate_terminal_node(self, path, node):
         score = self.node_game_state_score(node)
@@ -722,7 +770,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
                 role_str = self.role_str
 
             try:
-                mean_score = self.total_score / self.times_seen
+                mean_score = self.mean_score()
             except ZeroDivisionError:
                 mean_score = float('NaN')
 
@@ -730,8 +778,11 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
                 role=role_str, times_seen=self.times_seen,
                 mean_score=mean_score)
 
+        def mean_score(self):
+            return self.total_score / self.times_seen
+
         def get_random_unseen_action(self):
-            return self.unseen_actions.pop().get()
+            return self.unseen_actions[-1].get()
 
         def game_state_utility(self):
             return self.game_state.utility(self.role)
@@ -746,14 +797,13 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
         def attach_child(self, action, child):
             action_string = str(action)
             assert action_string not in self.action_child
+            assert action_string == str(self.unseen_actions[-1].get())
             self.action_child[action_string] = child
+            self.unseen_actions.pop()
 
         def update(self, score_role, score):
             self.times_seen += 1
-            if score_role == self.role:
-                self.total_score += score
-            else:
-                self.total_score -= score
+            self.total_score += score
 
         def _get_unseen_actions(self):
             unseen_actions = [
