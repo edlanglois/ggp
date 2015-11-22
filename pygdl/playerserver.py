@@ -78,7 +78,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
         message_s_expression = s_expression_parser.parse_expression(message)
         message_type = message_s_expression[0]
         try:
-            handler = getattr(self, 'do_' + message_type)
+            handler = getattr(self, 'do_' + message_type.lower())
         except AttributeError:
             logger.error("No handler for messsage type: " + message_type)
             return
@@ -156,7 +156,15 @@ class SerialGeneralGamePlayingMessageHandler(object):
 
         player = self.get_game_player(game_id)
 
-        if new_moves != 'nil':
+        try:
+            new_moves_lower = new_moves.lower()
+        except AttributeError:
+            run_update = True
+            pass
+        else:
+            run_update = new_moves_lower != 'nil'
+
+        if run_update:
             player.update_moves(self._translate_new_moves_to_prolog(new_moves))
 
         move = player.get_move()
