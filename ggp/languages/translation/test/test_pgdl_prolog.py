@@ -6,13 +6,13 @@ from nose.tools import (
     assert_sequence_equal,
 )
 
-from pygdl.languages.prefixgdl import (
+from ggp.languages.prefixgdl import (
     PrefixGdlAtom,
     PrefixGdlCompoundTerm,
     PrefixGdlVariable,
 )
 
-from pygdl.languages.prolog import (
+from ggp.languages.prolog import (
     PrologAtom,
     PrologCompoundTerm,
     PrologInteger,
@@ -21,7 +21,7 @@ from pygdl.languages.prolog import (
     PrologVariable,
 )
 
-from pygdl.languages.translation.pgdl_prolog import (
+from ggp.languages.translation.pgdl_prolog import (
     PrefixGdlToProlog,
     PrologToPrefixGdl,
 )

@@ -11,7 +11,7 @@ from nose.tools import (
 )
 import nosepipe
 
-from pygdl.gamestate import (
+from ggp.gamestate import (
     GeneralGameManager,
     GeneralGame,
     GeneralGameState,

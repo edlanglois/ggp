@@ -6,7 +6,7 @@ from nose.tools import (
     assert_sequence_equal,
 )
 
-from pygdl.languages.prolog import (
+from ggp.languages.prolog import (
     PrologAtom,
     PrologCompoundTerm,
     PrologFloat,

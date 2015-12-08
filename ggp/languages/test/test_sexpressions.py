@@ -5,7 +5,7 @@ from nose.tools import (
 
 from pyparsing import ParseException
 
-from pygdl.languages.sexpressions import (
+from ggp.languages.sexpressions import (
     SExpression,
     SExpressionList,
     SExpressionParser,

@@ -6,7 +6,7 @@ import operator
 import random
 import signal
 
-from pygdl.gamestate import ActionRecord
+from ggp.gamestate import ActionRecord
 
 __all__ = [
     'AlphaBeta',

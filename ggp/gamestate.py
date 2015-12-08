@@ -14,8 +14,8 @@ from swilite import (
 from swilite.extras import (
     and_functor, consult, make_and_term, make_list_term)
 
-from pygdl.languages.prolog import PrologList
-from pygdl.paths import prolog_dir
+from ggp.languages.prolog import PrologList
+from ggp.paths import prolog_dir
 
 __all__ = [
     'GeneralGameManager',

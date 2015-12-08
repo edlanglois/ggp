@@ -4,9 +4,9 @@ import http.server
 import logging
 import sys
 
-from pygdl.languages.prolog import PrologTerm, UnparsedPrologTerm
-from pygdl.languages.sexpressions import s_expression_parser, SExpression
-from pygdl.languages.translation.pgdl_prolog import (
+from ggp.languages.prolog import PrologTerm, UnparsedPrologTerm
+from ggp.languages.sexpressions import s_expression_parser, SExpression
+from ggp.languages.translation.pgdl_prolog import (
     PrefixGdlToProlog,
     PrologToPrefixGdl,
 )

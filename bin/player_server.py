@@ -5,7 +5,7 @@ import faulthandler
 import inspect
 import logging
 
-from pygdl.players import (
+from ggp.players import (
     AlphaBeta,
     BoundedDepth,
     CompulsiveDeliberation,
@@ -68,8 +68,8 @@ def main():
 
     args = parser.parse_args()
 
-    from pygdl.gamestate import GeneralGameManager
-    from pygdl.playerserver import run_player_server
+    from ggp.gamestate import GeneralGameManager
+    from ggp.playerserver import run_player_server
 
     player_class_dict = {class_.__name__: class_
                          for class_ in player_classes}

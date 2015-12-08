@@ -12,7 +12,7 @@ from pyparsing import (
     quotedString,
 )
 
-from pygdl.utils.comparison import TypedEqualityMixin
+from ggp.utils.comparison import TypedEqualityMixin
 
 
 class PrefixGdlTerm(TypedEqualityMixin):

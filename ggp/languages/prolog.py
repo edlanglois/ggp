@@ -6,8 +6,8 @@ import string
 
 import pyswip
 
-from pygdl.paths import prolog_dir
-from pygdl.utils.comparison import TypedEqualityMixin
+from ggp.paths import prolog_dir
+from ggp.utils.comparison import TypedEqualityMixin
 
 _introspection_prolog_file = os.path.join(prolog_dir, 'introspection.pl')
 _prolog_session = pyswip.Prolog()

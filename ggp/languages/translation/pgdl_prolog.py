@@ -1,5 +1,5 @@
 """Translation between Prefix GDL and Prolog"""
-from pygdl.languages import prefixgdl, prolog
+from ggp.languages import prefixgdl, prolog
 
 __all__ = [
     'PrefixGdlToProlog',

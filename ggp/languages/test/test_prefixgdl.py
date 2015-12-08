@@ -4,7 +4,7 @@ from nose.tools import (
     assert_not_equal,
 )
 
-from pygdl.languages.prefixgdl import (
+from ggp.languages.prefixgdl import (
     PrefixGdlAtom,
     PrefixGdlAtomicTerm,
     PrefixGdlCompoundTerm,
