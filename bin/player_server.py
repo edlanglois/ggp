@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 import argparse
-import faulthandler
 import inspect
 import logging
 
@@ -41,7 +40,6 @@ class LogLevel(object):
 
 
 def main():
-    # faulthandler.enable()  # XXX
     parser = argparse.ArgumentParser(description="General Game Player Server")
     parser.add_argument('-P', '--port', type=int, default=9147,
                         help="Port on which the server listens. (default 9147)")

@@ -658,12 +658,6 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
         assert self.root.game_state == self.game_state
 
     def run_search(self, timer):
-        # with DelayedSignal(signal.SIGALRM):
-        #    self.logger.debug('Running search from:')
-        # XXX
-        # for line in self._node_tree_lines(self.root, max_depth=2):
-        #    self.logger.debug(line)
-
         node = self.root
         path = [node]
 
