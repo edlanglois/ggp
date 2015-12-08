@@ -1,9 +1,7 @@
 import logging
 import os.path
 
-from pygdl.pyswipl.extras import (
-    and_functor, consult, make_and_term, make_list_term)
-from pygdl.pyswipl.prolog import (
+from swilite import (
     Atom,
     Functor,
     Module,
@@ -13,6 +11,9 @@ from pygdl.pyswipl.prolog import (
     TermList,
     TermRecord as ActionRecord,
 )
+from swilite.extras import (
+    and_functor, consult, make_and_term, make_list_term)
+
 from pygdl.languages.prolog import PrologList
 from pygdl.paths import prolog_dir
 

@@ -12,5 +12,6 @@ setup(
     install_requires=[
         "pyparsing",
         "pyswip>=0.2.5",
+        "swilite",
     ],
 )
