@@ -1,5 +1,23 @@
-*.egg-info
+# Project Config
+setup.cfg
+
+# Vim
 *.swp
-*.prof
-__pycache__/
+*.swo
+
+# Rope
 .ropeproject/
+
+# Python
+*.egg-info
+*.pyc
+.eggs/
+.venv
+__pycache__/
+
+# Profiling
+*.prof
+
+# Code Coverage
+.coverage
+cover/
