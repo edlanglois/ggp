@@ -621,7 +621,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
     ])
 
     def __init__(self, game, role, start_clock, play_clock, C):
-        with self.timed_init(start_clock, buffer_seconds=2) as timer:
+        with self.timed_init(start_clock, buffer_seconds=1) as timer:
             super().__init__(game=game, role=role, start_clock=start_clock,
                              play_clock=play_clock)
             self.C = C
@@ -640,7 +640,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
                 pass
 
     def get_move(self):
-        with self.timed_turn(buffer_seconds=3) as timer:
+        with self.timed_turn(buffer_seconds=1) as timer:
             try:
                 while True:
                     timer.check()
@@ -795,7 +795,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
             return self.total_score / self.times_seen
 
         def get_random_unseen_action(self):
-            return self.unseen_actions[-1].get()
+            return self.unseen_actions[-1]
 
         def game_state_utility(self):
             return self.game_state.utility(self.role)
@@ -810,7 +810,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
         def attach_child(self, action, child):
             action_string = str(action)
             assert action_string not in self.action_child
-            assert action_string == str(self.unseen_actions[-1].get())
+            assert action_string == str(self.unseen_actions[-1])
             self.action_child[action_string] = child
             self.unseen_actions.pop()
 
