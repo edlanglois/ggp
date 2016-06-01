@@ -25,7 +25,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-class PlayerFactory(object):
+class PlayerFactory():
     """Player factory for GamePlayer"""
     def __init__(self, player_class, **player_init_kwargs):
         super().__init__()
@@ -50,7 +50,7 @@ class PlayerFactory(object):
         return self.player_class.__name__
 
 
-class ParameterDescription(object):
+class ParameterDescription():
     PARAMS = ['type', 'help', 'choices', 'default']
 
     def __init__(self, **kwargs):
@@ -66,7 +66,7 @@ class ParameterDescription(object):
         self.dict = kwargs
 
 
-class GamePlayer(object):
+class GamePlayer():
     MIN_SCORE = 0
     MAX_SCORE = 100
 
@@ -115,7 +115,7 @@ class GamePlayer(object):
         self.logger.info('Aborting game.')
 
 
-class AlarmContextManager(object):
+class AlarmContextManager():
     alarm_active = False
 
     def __init__(self, seconds):
@@ -149,7 +149,7 @@ class TimeUp(Exception):
     pass
 
 
-class DelayedSignal(object):
+class DelayedSignal():
     """Context manager that delays a single signal call."""
     def __init__(self, signal_number):
         self.signal_number = signal_number
@@ -171,7 +171,7 @@ class DelayedSignal(object):
         self.handler_frame = frame
 
 
-class PlayerTimingMixin(object):
+class PlayerTimingMixin():
     def timed_init(self, start_clock, buffer_seconds=1):
         return AlarmContextManager(
             seconds=(start_clock.seconds - buffer_seconds))
@@ -443,12 +443,17 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
         ('heuristic', ParameterDescription(
             type=str, choices=['zero', 'utility', 'mobility'],
             help='Heuristic method.')),
+        ('timer_buffer', ParameterDescription(
+            type=int, default=1,
+            help=('Number of seconds before the time limit that the turn timer'
+                  ' fires. (default: %(default)s)'))),
     ])
 
     def __init__(self, game, role, start_clock, play_clock, max_depth,
-                 heuristic):
+                 heuristic, timer_buffer):
         super().__init__(game, role, start_clock, play_clock)
         self.max_depth = max_depth
+        self.timer_buffer = timer_buffer
         self.logger.debug('Max depth: {}'.format(max_depth))
 
         if callable(heuristic):
@@ -504,7 +509,7 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
         action = first_action(self.game_state, self.role)
         original_max_depth = self.max_depth
 
-        with self.timed_turn() as timer:
+        with self.timed_turn(buffer_seconds=self.timer_buffer) as timer:
             self.timer = timer
 
             try:
@@ -530,7 +535,7 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
         return action
 
 
-class GameSimulator(object):
+class GameSimulator():
     def __init__(self, role, roles):
         self.role = role
         self.roles = roles
@@ -576,7 +581,7 @@ class MonteCarlo(BoundedDepth):
         return self.game_simulator.play_random_game(game_state, self.timer)
 
 
-class PartialMoveGameState(object):
+class PartialMoveGameState():
     def __init__(self, game_state, roles=None, moves=None):
         self.game_state = game_state
         self._roles = (roles if roles is not None
@@ -615,14 +620,19 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
     PARAMETER_DESCRIPTIONS = OrderedDict([
         ('C', ParameterDescription(
             type=float, default=math.sqrt(2),
-            help='Parameter controlling exploration rate. (default √2)'))
+            help='Parameter controlling exploration rate. (default √2)')),
+        ('timer_buffer', ParameterDescription(
+            type=int, default=1,
+            help=('Number of seconds before the time limit that the turn timer'
+                  ' fires. (default: %(default)s)'))),
     ])
 
-    def __init__(self, game, role, start_clock, play_clock, C):
+    def __init__(self, game, role, start_clock, play_clock, C, timer_buffer):
         with self.timed_init(start_clock) as timer:
             super().__init__(game=game, role=role, start_clock=start_clock,
                              play_clock=play_clock)
             self.C = C
+            self.timer_buffer = timer_buffer
             self.role_index = self.roles.index(self.role)
             self.max_utility = self.game.max_utility()
             self.min_utility = self.game.min_utility()
@@ -638,7 +648,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
                 pass
 
     def get_move(self):
-        with self.timed_turn(buffer_seconds=1) as timer:
+        with self.timed_turn(buffer_seconds=self.timer_buffer) as timer:
             try:
                 while True:
                     timer.check()
@@ -760,7 +770,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
             yield from MonteCarloTreeSearch._node_tree_lines(
                 node=child, depth=(depth + 1), max_depth=max_depth)
 
-    class Node(object):
+    class Node():
         def __init__(self, game_state, role_index, roles):
             self.game_state = game_state
             self.role_index = role_index

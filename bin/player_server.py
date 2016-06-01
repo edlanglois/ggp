@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-
 import argparse
 import inspect
 import logging
+import random
 
 from ggp.gamestate import GeneralGameManager
 from ggp.players import (
@@ -52,6 +52,8 @@ def main():
                               "Either an integer value or one of: "
                               "{} (default '{}')".format(
                                   ', '.join(LogLevel.levels), 'info')))
+    parser.add_argument('--seed', type=int, nargs='?', const=1,
+                        help='Fix random seed. 1 if used if SEED not given.')
     subparsers = parser.add_subparsers(
         title='Players', dest='player', metavar='PLAYER',
         help='Game player class.')
@@ -69,6 +71,8 @@ def main():
             player_parser.add_argument(param_name, **description.dict)
 
     args = parser.parse_args()
+    if args.seed is not None:
+        random.seed(args.seed)
 
     player_class_dict = {class_.__name__: class_
                          for class_ in player_classes}
