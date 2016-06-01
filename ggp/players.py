@@ -314,7 +314,7 @@ class SimpleDepthFirstSearch(SearchPlayer):
         move_is_known_optimal = (len(actions) == 1 or
                                  best_score == self.MAX_SCORE)
         return (best_score, best_move_sequence,
-                num_known_optimal_moves + int(move_is_known_optimal))
+                num_known_optimal_moves + 1 if move_is_known_optimal else 0)
 
 
 class CompulsiveDeliberation(SimpleDepthFirstSearch):
@@ -407,7 +407,7 @@ class Minimax(SearchPlayer):
         move_is_known_optimal = (len(own_actions) == 1 or
                                  max_step_score == self.max_utility)
         return (max_step_score, max_step_score_move_sequence,
-                num_known_optimal_moves + int(move_is_known_optimal))
+                num_known_optimal_moves + 1 if move_is_known_optimal else 0)
 
     def min_step_break(self, score, max_step_score):
         return score == self.min_utility
@@ -501,12 +501,15 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
             depth=depth, prev_min_step_score=prev_min_step_score)
 
     def get_move(self):
-        if self.max_depth == -1:
-            with self.timed_turn(buffer_seconds=1) as timer:
-                self.timer = timer
-                self.max_depth = 0
-                action = first_action(self.game_state, self.role)
-                try:
+        action = first_action(self.game_state, self.role)
+        original_max_depth = self.max_depth
+
+        with self.timed_turn() as timer:
+            self.timer = timer
+
+            try:
+                if self.max_depth == -1:
+                    self.max_depth = 0
                     while True:
                         timer.check()
                         self.max_depth += 1
@@ -516,20 +519,15 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
                             self.get_move_with_optimality()
                         if is_known_optimal:
                             break
-
-                except TimeUp:
-                    pass
-
-            try:
-                del self.timer
-            except AttributeError:
+                else:
+                    action = super().get_move()
+            except TimeUp:
                 pass
+            finally:
+                del self.timer
 
-            self.max_depth = -1
-            return action
-
-        else:
-            return super().get_move()
+        self.max_depth = original_max_depth
+        return action
 
 
 class GameSimulator(object):
@@ -621,7 +619,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
     ])
 
     def __init__(self, game, role, start_clock, play_clock, C):
-        with self.timed_init(start_clock, buffer_seconds=1) as timer:
+        with self.timed_init(start_clock) as timer:
             super().__init__(game=game, role=role, start_clock=start_clock,
                              play_clock=play_clock)
             self.C = C
