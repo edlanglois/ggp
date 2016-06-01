@@ -91,6 +91,9 @@ class PrefixGdlToProlog(PrefixGdlParser):
         if name == '<=':
             name = ':-'
             # '<=' is variadic while ':-' has arity 2
+            if not args[1:]:
+                # (<= foo) is the same as foo
+                return args[0]
             args = (args[0], reduce(lambda b, a: a & b, reversed(args[1:])))
 
         return swilite.Term.from_cons_functor(
