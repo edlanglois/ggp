@@ -195,7 +195,7 @@ class Legal(GamePlayer):
         return str(first_action(self.game_state, self.role))
 
 
-def random_action(game_state, role, as_string):
+def random_action(game_state, role):
     selected_action = None
     for i, action in enumerate(game_state.legal_actions(role)):
         if random.randint(0, i) == 0:
@@ -210,7 +210,23 @@ class Random(GamePlayer):
 
 
 class SearchPlayer(GamePlayer):
-    def score_estimate_and_move_sequence(self, game_state, **kwargs):
+    def score_estimate_and_move_sequence(self, game_state, score_matters,
+                                         **kwargs):
+        """Get an estimate of the score, with associated move sequence.
+
+        Args:
+            game_state (GeneralGameState): Estimate score for this game state.
+            score_matters (bool)         : Whether the score estimate is
+                required. If ``False``, the estimated score may still be
+                returned or it may be ``None``.
+
+        Returns:
+            float: Estimated score attainable from `game_state`.
+            tuple: Move sequence from `game_state` that produces the estimated
+                score.
+            int: Number of consecutive moves at the start of the sequence known
+                to be optimal.
+        """
         raise NotImplementedError
 
     def init_score_estimate_kwargs(self):
@@ -227,16 +243,18 @@ class SearchPlayer(GamePlayer):
             score_matters=score_matters,
             **self.init_score_estimate_kwargs())
 
-    def extract_own_move(self, move_sequence_element):
-        try:
-            return move_sequence_element[self.role]
-        except TypeError:
-            return move_sequence_element
+    def get_move_with_optimality(self):
+        """Get move choice and associated score.
 
-    def get_move(self):
-        score, move_sequence = self.get_best_score_and_move_sequence(
-            score_matters=False)
+        Returns:
+            ggp.gamestate.Action: Selected move.
+            bool: ``True`` if the returned move is known to be optimal.
+        """
+        score, move_sequence, num_known_optimal_moves = \
+            self.get_best_score_and_move_sequence(score_matters=False)
         logger.debug('Score: {}'.format(score))
+        logger.debug('Num. moves known optimal: {}'.format(
+            num_known_optimal_moves))
         logger.debug('Move sequence:')
         for move in move_sequence:
             try:
@@ -245,7 +263,18 @@ class SearchPlayer(GamePlayer):
             except AttributeError:
                 logger.debug('\t{!s}'.format(move))
 
-        return self.extract_own_move(move_sequence[0])
+        return (self.extract_own_move(move_sequence[0]),
+                num_known_optimal_moves > 0)
+
+    def extract_own_move(self, move_sequence_element):
+        try:
+            return move_sequence_element[self.role]
+        except TypeError:
+            return move_sequence_element
+
+    def get_move(self):
+        move, _ = self.get_move_with_optimality()
+        return move
 
 
 class SimpleDepthFirstSearch(SearchPlayer):
@@ -254,31 +283,38 @@ class SimpleDepthFirstSearch(SearchPlayer):
         assert self.game.num_roles() == 1, \
             "SimpleDepthFirstSearch only works for single-player games."
 
-    def score_estimate_and_move_sequence(self, game_state):
+    def score_estimate_and_move_sequence(self, game_state, score_matters):
         if game_state.is_terminal():
-            return game_state.utility(self.role), tuple()
+            return game_state.utility(self.role), tuple(), 0
 
-        moves = tuple(game_state.legal_actions(self.role, persistent=True))
+        actions = tuple(game_state.legal_actions(self.role))
+        if not score_matters and len(actions) == 1:
+            return None, (actions[0],), 1
 
         best_score = self.MIN_SCORE - 1
         best_move_sequence = tuple()
 
-        for move_record in moves:
-            move = move_record.get()
-            score, move_sequence = self.score_estimate_and_move_sequence(
-                game_state=game_state.apply_moves({self.role: move}))
+        for action in actions:
+            moves = {self.role: action}
+            score, move_sequence, num_known_optimal_moves = \
+                self.score_estimate_and_move_sequence(
+                    game_state=game_state.apply_moves(moves),
+                    score_matters=True)
 
             assert score >= self.MIN_SCORE
             assert score <= self.MAX_SCORE
 
             if score > best_score:
                 best_score = score
-                best_move_sequence = (str(move),) + move_sequence
+                best_move_sequence = (str(action),) + move_sequence
 
             if best_score == self.MAX_SCORE:
                 break
 
-        return best_score, best_move_sequence
+        move_is_known_optimal = (len(actions) == 1 or
+                                 best_score == self.MAX_SCORE)
+        return (best_score, best_move_sequence,
+                num_known_optimal_moves + int(move_is_known_optimal))
 
 
 class CompulsiveDeliberation(SimpleDepthFirstSearch):
@@ -316,44 +352,39 @@ class Minimax(SearchPlayer):
                                          score_matters,
                                          depth,
                                          prev_min_step_score):
-
-        non_rec_found, non_rec_estimate, non_rec_moves = \
+        non_rec_found, *non_rec_retval = \
             self.non_recursive_score_estimate_and_move_sequence(
                 game_state, depth=depth)
         if non_rec_found:
-            return non_rec_estimate, non_rec_moves
+            return non_rec_retval
 
-        own_moves = [
-            action.get() for action
-            in tuple(game_state.legal_actions(self.role, persistent=True))]
-        assert own_moves
-        random.shuffle(own_moves)  # Avoid bias in case of score ties.
+        own_actions = list(game_state.legal_actions(self.role))
+        assert own_actions
+        random.shuffle(own_actions)  # Avoid bias in case of score ties.
 
-        if not score_matters and len(own_moves) == 1:
-            self.notify_trivial_turn()
-            return None, (own_moves[0],)
+        if not score_matters and len(own_actions) == 1:
+            return None, (own_actions[0],), 1
 
-        other_roles_move_lists = tuple(
-            tuple((role, move_record.get()) for move_record
-                  in tuple(game_state.legal_actions(role, persistent=True)))
+        other_roles_actions = tuple(
+            tuple((role, action) for action in game_state.legal_actions(role))
             for role in self.other_roles)
-        assert all(move_list for move_list in other_roles_move_lists)
+        assert all(actions for actions in other_roles_actions)
 
         max_step_score = self.min_utility - 1
         max_step_score_move_sequence = ()
 
-        for own_move in own_moves:
+        for own_action in own_actions:
             min_step_score = self.max_utility + 1
             min_step_score_move_sequence = ()
 
-            for other_roles_moves in itertools.product(
-                    *other_roles_move_lists):
-                moves = dict(other_roles_moves + ((self.role, own_move),))
-                score, move_sequence = self.score_estimate_and_move_sequence(
-                    game_state=game_state.apply_moves(moves),
-                    score_matters=True,
-                    depth=(depth + 1),
-                    prev_min_step_score=min_step_score)
+            for other_roles_moves in itertools.product(*other_roles_actions):
+                moves = dict(other_roles_moves + ((self.role, own_action),))
+                score, move_sequence, num_known_optimal_moves = \
+                    self.score_estimate_and_move_sequence(
+                        game_state=game_state.apply_moves(moves),
+                        score_matters=True,
+                        depth=(depth + 1),
+                        prev_min_step_score=min_step_score)
                 assert score >= self.min_utility
                 assert score <= self.max_utility
 
@@ -373,7 +404,10 @@ class Minimax(SearchPlayer):
             if self.max_step_break(max_step_score, prev_min_step_score):
                 break
 
-        return max_step_score, max_step_score_move_sequence
+        move_is_known_optimal = (len(own_actions) == 1 or
+                                 max_step_score == self.max_utility)
+        return (max_step_score, max_step_score_move_sequence,
+                num_known_optimal_moves + int(move_is_known_optimal))
 
     def min_step_break(self, score, max_step_score):
         return score == self.min_utility
@@ -384,11 +418,8 @@ class Minimax(SearchPlayer):
     def non_recursive_score_estimate_and_move_sequence(self, game_state,
                                                        depth):
         if game_state.is_terminal():
-            return True, game_state.utility(self.role), ()
-        return False, None, None
-
-    def notify_trivial_turn(self):
-        pass
+            return True, game_state.utility(self.role), (), 0
+        return False, None, None, None
 
 
 class AlphaBeta(Minimax):
@@ -432,22 +463,20 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
             raise ValueError('Unknown heuristic {}'.format(heuristic))
 
         self.num_possible_moves = {
-            str(role_): len(set(
-                str(action)
-                for action in self.game.all_actions(role_, persistent=False)))
-            for role_ in self.roles
-        }
+            role_:
+            len(set(str(action) for action in self.game.all_actions(role_)))
+            for role_ in self.roles}
 
     def non_recursive_score_estimate_and_move_sequence(self, game_state,
                                                        depth):
         if game_state.is_terminal():
-            return True, game_state.utility(self.role), ()
+            return True, game_state.utility(self.role), (), 0
         elif depth >= self.max_depth:
             # Scale the heuristic function to 10 - 90 so that
             # certain wins and losses carry more weight.
-            return True, self.heuristic_function(game_state) * 0.8 + 10, ()
+            return True, self.heuristic_function(game_state) * 0.8 + 10, (), 0
         else:
-            return False, None, None
+            return False, None, None, None
 
     def heuristic_zero(self, game_state):
         return 0
@@ -458,8 +487,8 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
     def heuristic_mobility(self, game_state):
         return (
             len(set(str(action) for action
-                in game_state.legal_actions(self.role, persistent=False))) /
-            self.num_possible_moves[str(self.role)])
+                    in game_state.legal_actions(self.role))) /
+            self.num_possible_moves[self.role])
 
     def score_estimate_and_move_sequence(self,
                                          game_state,
@@ -467,16 +496,15 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
                                          depth,
                                          prev_min_step_score):
         self.timer.check()
-        super().score_estimate_and_move_sequence(
+        return super().score_estimate_and_move_sequence(
             game_state=game_state, score_matters=score_matters,
             depth=depth, prev_min_step_score=prev_min_step_score)
 
     def get_move(self):
         if self.max_depth == -1:
-            with self.timed_turn(buffer_seconds=2) as timer:
+            with self.timed_turn(buffer_seconds=1) as timer:
                 self.timer = timer
                 self.max_depth = 0
-                self.trivial_turn = False
                 action = first_action(self.game_state, self.role)
                 try:
                     while True:
@@ -484,9 +512,11 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
                         self.max_depth += 1
                         self.logger.debug(
                             'Running to depth {}'.format(self.max_depth))
-                        action = super().get_move()
-                        if self.trivial_turn:
+                        action, is_known_optimal = \
+                            self.get_move_with_optimality()
+                        if is_known_optimal:
                             break
+
                 except TimeUp:
                     pass
 
@@ -500,9 +530,6 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
 
         else:
             return super().get_move()
-
-    def notify_trivial_turn(self):
-        self.trivial_turn = True
 
 
 class GameSimulator(object):
@@ -519,7 +546,7 @@ class GameSimulator(object):
         while not game_state.is_terminal():
             timer.check()
             game_state = game_state.apply_moves({
-                role: random_action(game_state, role, as_string=False)
+                role: random_action(game_state, role)
                 for role in self.roles})
 
         return game_state.utility(self.role)
@@ -602,8 +629,8 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
             self.max_utility = self.game.max_utility()
             self.min_utility = self.game.min_utility()
             self.root = self._make_root_node()
-            self.game_simulator = GameSimulator(
-                role=self.role, roles=self.roles)
+            self.game_simulator = GameSimulator(role=self.role,
+                                                roles=self.roles)
 
             try:
                 while True:

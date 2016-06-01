@@ -156,7 +156,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
             run_update = new_moves_lower != 'nil'
 
         if run_update:
-            player.update_moves(new_moves)
+            player.update_moves([str(move) for move in new_moves])
 
         move = player.get_move()
         logger.info("Selected move: " + str(move))
@@ -175,7 +175,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
         player = self.get_game_player(game_id)
 
         if new_moves != 'nil':
-            player.update_moves(new_moves)
+            player.update_moves([str(move) for move in new_moves])
 
         player.stop()
         del self.game_players[game_id]

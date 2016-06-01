@@ -417,11 +417,15 @@ class GeneralGameState(object):
             return self._query_term(Term.from_atom(self._terminal_atom))()
 
     def apply_moves(self, moves):
-        """A new game state representing the game after moves are applied.
+        """A new game state representing the game after a move is applied.
 
         Returns a new state, this state is unchanged.
+
         Args:
-            moves (dict) : Dictionary of Role => Action.
+            moves (dict) : Dict of `Role` => `Action`, one entry per role.
+
+        Returns:
+            GeneralGameState: The new game state.
         """
         game_id_term = Term.from_atom_name(self.game_id())
 
