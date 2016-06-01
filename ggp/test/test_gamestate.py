@@ -26,6 +26,7 @@ faulthandler.enable()
 MODULE_DIR = os.path.dirname(os.path.relpath(__file__))
 BUTTONS_AND_LIGHTS_FILE = os.path.join(MODULE_DIR, 'buttonsandlights.gdl')
 TIC_TAC_TOE_FILE = os.path.join(MODULE_DIR, 'tictactoe.gdl')
+ALQUERQUE_FILE = os.path.join(MODULE_DIR, 'alquerque.gdl')
 
 
 def test_role__str__():
@@ -104,8 +105,9 @@ class BaseTestGeneralGame():
         self.game_name = game_name
         self.game_rules_file = game_rules_file
         self.roles = [Role(role) for role in roles]
-        actions = [Action(action) for action in actions]
-        if isinstance(actions, dict):
+        if actions is not None:
+            actions = [Action(action) for action in actions]
+        if actions is None or isinstance(actions, dict):
             self.actions = actions
         else:
             self.actions = {role: actions for role in self.roles}
@@ -137,6 +139,8 @@ class BaseTestGeneralGame():
             assert_equal(Role(str(role)), role)
 
     def test_action(self):
+        if self.actions is None:
+            return
         seen_actions = set()
         for action_list in self.actions.values():
             for action in action_list:
@@ -147,13 +151,15 @@ class BaseTestGeneralGame():
                 assert_equal(Action(action_str), action)
 
     def test_all_actions_iterating(self):
+        if self.actions is None:
+            return
         for role in self.roles:
-            print('expected', *sorted(str(a) for a in self.actions[role]))
-            print('results ', *sorted(str(a) for a in self.game.all_actions(role)))
             assert_object_sets_equal(self.game.all_actions(role),
                                      self.actions[role])
 
     def test_all_actions_not_iterating(self):
+        if self.actions is None:
+            return
         for role in self.roles:
             assert_object_sets_equal(list(self.game.all_actions(role)),
                                      self.actions[role])
@@ -175,7 +181,7 @@ class BaseTestGeneralGame():
 
 class TestGeneralGameButtonsAndLights(BaseTestGeneralGame):
     def __init__(self):
-        super(TestGeneralGameButtonsAndLights, self).__init__(
+        super().__init__(
             game_name='buttonsandlights',
             game_rules_file=BUTTONS_AND_LIGHTS_FILE,
             roles=['robot'],
@@ -186,7 +192,7 @@ class TestGeneralGameButtonsAndLights(BaseTestGeneralGame):
 
 class TestGeneralGameTicTacToe(BaseTestGeneralGame):
     def __init__(self):
-        super(TestGeneralGameTicTacToe, self).__init__(
+        super().__init__(
             game_name='tictactoe',
             game_rules_file=TIC_TAC_TOE_FILE,
             roles=['white', 'black'],
@@ -196,6 +202,24 @@ class TestGeneralGameTicTacToe(BaseTestGeneralGame):
                 ['(step {})'.format(i) for i in range(1, 8)] +
                 ['(cell {} {} {})'.format(i, j, x)
                  for i in range(1, 4) for j in range(1, 4) for x in 'xob'])
+        )
+
+
+class TestGeneralGameAlquerque(BaseTestGeneralGame):
+    def __init__(self):
+        super().__init__(
+            game_name='alquerque',
+            game_rules_file=ALQUERQUE_FILE,
+            roles=['red', 'black'],
+            actions=None,
+            base_propositions=(
+                ['(cell {} {} {})'.format(m, n, mark)
+                 for m in range(1, 6) for n in range(1, 6)
+                 for mark in ('black', 'red', 'blank')] +
+                ['(score {} {})'.format(role, score * 10)
+                 for role in ('red', 'black') for score in range(11)] +
+                ['(control {})'.format(role) for role in ('red', 'black')] +
+                ['(step {})'.format(step) for step in range(1, 31)])
         )
 
 
