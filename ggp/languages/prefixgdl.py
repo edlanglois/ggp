@@ -1,5 +1,6 @@
 """Prefix Game Description Language (GDL)"""
-import itertools
+from functools import reduce
+
 from pyparsing import (
     Forward,
     Group,
@@ -11,70 +12,16 @@ from pyparsing import (
     printables,
     quotedString,
 )
+import swilite
 
-from ggp.utils.comparison import TypedEqualityMixin
-
-
-class PrefixGdlTerm(TypedEqualityMixin):
-    pass
-
-
-class PrefixGdlAtomicTerm(PrefixGdlTerm):
-    def __init__(self, name):
-        self.name = name
-
-    def __repr__(self):
-        return '{class_}(name={name!r})'.format(
-            class_=self.__class__.__name__,
-            name=self.name)
+__all__ = [
+    'prefix_gdl_statement_to_prolog',
+    'prefix_gdl_statements_to_prolog',
+    'prolog_term_to_prefix_gdl',
+]
 
 
-class PrefixGdlAtom(PrefixGdlAtomicTerm):
-    def __init__(self, name):
-        if name[0] == '?':
-            raise ValueError('{cls} name cannot begin with ?'.format(
-                cls=PrefixGdlAtom.__name__))
-        self.name = name
-
-    def __str__(self):
-        return self.name
-
-
-class PrefixGdlVariable(PrefixGdlAtomicTerm):
-    def __init__(self, name):
-        self.name = name
-
-    def __str__(self):
-        return '?' + self.name
-
-
-class PrefixGdlCompoundTerm(PrefixGdlTerm):
-    def __init__(self, name, args):
-        self.name = name
-        self.args = tuple(args)
-
-    def __str__(self):
-        return '({})'.format(' '.join(
-            str(x) for x in itertools.chain((self.name,), self.args)))
-
-    def __repr__(self):
-        return '{cls}(name={name!r}, args=({args}))'.format(
-            cls=self.__class__.__name__,
-            name=self.name,
-            args=', '.join(repr(x) for x in self.args))
-
-
-class PrefixGdlStatements(list):
-    def __str__(self):
-        return ' '.join(str(x) for x in self)
-
-    def __repr__(self):
-        return '{}([{}])'.format(
-            self.__class__.__name__,
-            ', '.join(repr(x) for x in self))
-
-
-class PrefixGdlParser(object):
+class PrefixGdlParser():
     def __init__(self):
         super().__init__()
         self.lpar = Literal('(')('lpar')
@@ -85,10 +32,8 @@ class PrefixGdlParser(object):
         self.word = Word(self.word_chars) | quotedString
         self.variable = (
             Suppress(self.qmark) + ~White() + self.word)('variable')
-        self.variable.addParseAction(self._variable_action)
 
         self.atom = self.word('atom')
-        self.atom.addParseAction(self._atom_action)
 
         self.term = Forward()
         self.terms = Group(ZeroOrMore(self.term))
@@ -101,34 +46,110 @@ class PrefixGdlParser(object):
             self.terms('arguments') +
             Suppress(self.rpar)
         )('compound_term')
-        self.compound_term.addParseAction(self._compound_term_action)
 
         self.term << (self.compound_term | self.variable | self.atom)
 
-        self.statements = self.terms('statements')
-        self.statements.addParseAction(self._statements_action)
+        self.statement = self.term('statement')
+        self.statements = Group(ZeroOrMore(self.statement))('statements')
 
-    def parse(self, instring):
-        return self.statements.parseString(instring, parseAll=True).statements
+
+class PrefixGdlToProlog(PrefixGdlParser):
+    def __init__(self):
+        super().__init__()
+        self.variables = {}
+
+        def variable_action(toks):
+            variable_name = toks.variable[0]
+            try:
+                return self.variables[variable_name]
+            except KeyError:
+                var = swilite.Term()
+                self.variables[variable_name] = var
+                return var
+
+        def statement_action(toks):
+            # Reset variables after each statement
+            self.variables = {}
+            return toks.statement
+
+        self.variable.addParseAction(variable_action)
+        self.atom.addParseAction(self._atom_action)
+        self.compound_term.addParseAction(self._compound_term_action)
+        self.statement.addParseAction(statement_action)
+        self.statements.addParseAction(self._statements_action)
 
     @staticmethod
     def _atom_action(toks):
-        return PrefixGdlAtom(name=toks.atom)
-
-    @staticmethod
-    def _variable_action(toks):
-        return PrefixGdlVariable(name=toks.variable[0])
+        return swilite.Term.from_atom_name(toks.atom)
 
     @staticmethod
     def _compound_term_action(toks):
-        return PrefixGdlCompoundTerm(
-            name=toks.compound_term.name,
-            args=toks.compound_term.arguments)
+        name = toks.compound_term.name
+        args = toks.compound_term.arguments
+
+        # Translate GDL rule operator to Prolog rule operator
+        if name == '<=':
+            name = ':-'
+            # '<=' is variadic while ':-' has arity 2
+            args = (args[0], reduce(lambda b, a: a & b, reversed(args[1:])))
+
+        return swilite.Term.from_cons_functor(
+            swilite.Functor(name, len(args)), *args)
 
     @staticmethod
     def _statements_action(toks):
-        # Pyparsing extracts tuple results into ParsedResults.  Since
-        # PrefixGdlStatements is a tuple, we wrap it in another tuple before
-        # returning, which will be extracted into a ParsedResults, leaving the
-        # PrefixGdlStatements intact.
-        return (PrefixGdlStatements(toks.statements),)
+        return swilite.Term.from_list_terms(toks.statements)
+
+
+_prefix_gdl_to_prolog = PrefixGdlToProlog()
+
+
+def prefix_gdl_statements_to_prolog(gdl_statements):
+    """Translate multiple GDL statements to a prolog term.
+
+    Args:
+        gdl_statements (str): A collection of GDL statements to translate.
+
+    Returns:
+        swilite.Term: Term representing a list of the translated
+            statements.
+    """
+    return _prefix_gdl_to_prolog.statements.parseString(
+        gdl_statements, parseAll=True).statements
+
+
+def prefix_gdl_statement_to_prolog(gdl_statement):
+    """Translate a single GDL statement to a prolog term.
+
+    Args:
+        gdl_statement (str): A GDL statement to translate.
+
+    Returns:
+        swilite.Term: Term representing the translated statement.
+    """
+    return _prefix_gdl_to_prolog.statement.parseString(
+        gdl_statement, parseAll=True).statement
+
+
+def prolog_term_to_prefix_gdl(term):
+    if term.is_compound():
+        name_atom, arity = term.get_compound_name_arity()
+        name = str(name_atom)
+        args = [prolog_term_to_prefix_gdl(term.get_arg(i))
+                for i in range(arity)]
+
+        if name == ':-':
+            # TODO:
+            # name = '<='
+            # Unpack arity-2 arguments to a single variadic arguments list
+            raise NotImplementedError(repr(term))
+        return '({})'.format(' '.join([name, *args]))
+
+    elif term.is_variable():
+        return '?' + str(term)
+    elif term.is_atom():
+        return term.get_atom_name()
+    elif term.is_numeric():
+        return str(term)
+    else:
+        raise NotImplementedError(repr(term))

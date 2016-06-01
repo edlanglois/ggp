@@ -3,36 +3,40 @@ import os.path
 
 from swilite import (
     Atom,
+    Frame,
     Functor,
     Module,
     Predicate,
     Query,
     Term,
     TermList,
-    TermRecord as ActionRecord,
+    TermRecord,
 )
-from swilite.extras import (
-    and_functor, consult, make_and_term, make_list_term)
-
-from ggp.languages.prolog import PrologList
 from ggp.paths import prolog_dir
+from ggp.languages.prefixgdl import (
+    prefix_gdl_statement_to_prolog,
+    prefix_gdl_statements_to_prolog,
+    prolog_term_to_prefix_gdl,
+)
 
 __all__ = [
     'GeneralGameManager',
     'GeneralGame',
     'GeneralGameState',
-    'ActionRecord',
+    'Role',
+    'Action',
+    'GameProposition',
 ]
 
 logger = logging.getLogger(__name__)
 
 # Read in game state rules
-consult(os.path.join(prolog_dir, 'ggp_state.pl'))
+Functor('consult', 1)(Term.from_atom_name(
+    os.path.join(prolog_dir, 'ggp_state.pl')))()
 
 
 class GeneralGameManager(object):
     """Manage game descriptions using SWI-Prolog"""
-
     _ggp_state = Module(Atom('ggp_state'))
     _game_id_predicate = Predicate(functor=Functor(Atom('game_id'), 1),
                                    module=_ggp_state)
@@ -41,179 +45,169 @@ class GeneralGameManager(object):
     _game_state_functor = Functor(Atom('game_state'), 3)
     _game_state_predicate = Predicate(functor=_game_state_functor,
                                       module=_ggp_state)
-    _and_predicate = Predicate(functor=and_functor)
+    _and_predicate = Predicate.from_name_arity(',', 2)
 
     def __init__(self):
         super().__init__()
 
         self._logger = logging.getLogger(__name__ + self.__class__.__name__)
 
-    def game_exists(self, game_id):
-        """Return true if a game with id game_id has been created."""
-        args = TermList(1)
-        args[0].put_atom_name(game_id)
-        return self._game_id_predicate(args)
+    def __str__(self):
+        return 'GeneralGameManager'
 
-    def create_game(self, game_id, rules):
-        """Create a game with the given game_id and rules set."""
-        args = TermList(2)
-        args[0].put_atom_name(game_id)
-        args[1].put_parsed(str(PrologList(rules)))
-        self._create_game_predicate(args, check=True)
+    def game_exists(self, game_id):
+        """Return true if a game with id game_id has been created.
+
+        Args:
+            game_id (str) : Game ID string
+        """
+        with Frame():
+            args = TermList(1)
+            args[0].put_atom_name(game_id)
+            return self._game_id_predicate(arglist=args)
+
+    def create_game(self, game_id, game_description):
+        """Create a game with the given game_id using the game description.
+
+        Args:
+            game_id (str)          : Game is created with this ID.
+            game_description (str) : Game description given in Game Description
+                Language (GDL).
+        """
+        with Frame():
+            self._create_game_predicate(
+                Term.from_atom_name(game_id),
+                prefix_gdl_statements_to_prolog(game_description),
+                check=True)
 
     def game(self, game_id):
-        """Get a GeneralGame object representing game_id"""
+        """Get a game by name.
+
+        Args:
+            game_id (str) : ID of game to retrieve.
+
+        Returns:
+            GeneralGame: Game with the given ID.
+        """
         return GeneralGame(self, game_id)
 
-    def role_object(self, role):
-        """Convert a role string to a role object usable in GGP methods."""
-        return Atom(role)
-
     @staticmethod
-    def _game_state_term_single(game_id, game_state, query):
+    def _game_state_term_single(game_id_term, game_state, query):
         """Construct a term representing a fact about a game state.
 
         Args:
-            game_id    (prolog.Term) : The game ID.
-            game_state (prolog.Term) : The current game state.
-            query      (prolog.Term) : Fact about the current game state.
+            game_id_term (swilite.Term) : The game ID.
+            game_state   (swilite.Term) : The current game state.
+            query        (swilite.Term) : Fact about the current game state.
 
         Returns:
-            prolog.Term:
+            swilite.Term:
         """
-        return Term.from_cons_functor(GeneralGameManager._game_state_functor,
-                                      game_id, game_state, query)
+        return GeneralGameManager._game_state_functor(
+            game_id_term, game_state, query)
 
     @staticmethod
-    def _game_state_term(game_id, game_state, *queries):
+    def _game_state_term(game_id_term, game_state, *queries):
         """Construct a term representing one or more facts about a game state.
 
         Args:
-            game_id    (prolog.Term) : The game ID.
-            game_state (prolog.Term) : The current game state.
-            *queries   (prolog.Term) : Facts about the current game state.
+            game_id_term (swilite.Term) : The game ID.
+            game_state   (swilite.Term) : The current game state.
+            *queries     (swilite.Term) : Facts about the current game state.
 
         Returns:
-            prolog.Term:
+            swilite.Term:
         """
-        assert queries
-        if len(queries) == 1:
-            return GeneralGameManager._game_state_term_single(
-                game_id, game_state, queries[0])
-        else:
-            return make_and_term(*(
-                GeneralGameManager._game_state_term_single(
-                    game_id, game_state, query)
-                for query in queries))
-
-    @staticmethod
-    def _game_state_query_single(game_id, game_state, query):
-        """Construct a query of a game state fact.
-
-        Args:
-            game_id    (prolog.Term) : The game ID.
-            game_state (prolog.Term) : The current game state.
-            query      (prolog.Term) : Fact about the current game state.
-
-        Returns:
-            prolog.Query:
-        """
-        args = TermList(3)
-        args[0].put_term(game_id)
-        args[1].put_term(game_state)
-        args[2].put_term(query)
-        return Query(predicate=GeneralGameManager._game_state_predicate,
-                     arguments=args)
-
-    @staticmethod
-    def _game_state_query(game_id, game_state, *queries):
-        """Construct a query of one or more game state facts.
-
-        Args:
-            game_id    (prolog.Term) : The game ID.
-            game_state (prolog.Term) : The current game state.
-            *queries   (prolog.Term) : Facts about the current game state.
-
-        Returns:
-            prolog.Query:
-        """
-        assert queries
-        if len(queries) == 1:
-            return GeneralGameManager._game_state_query_single(
-                game_id, game_state, queries[0])
-        else:
-            args = TermList(2)
-            args[0].put_term(GeneralGameManager._game_state_term_single(
-                game_id, game_state, queries[0]))
-            args[1].put_term(GeneralGameManager._game_state_term(
-                game_id, game_state, *queries[1:]))
-            return Query(predicate=GeneralGameManager._and_predicate,
-                         arguments=args)
+        queries = list(queries)
+        term = GeneralGameManager._game_state_term_single(
+            game_id_term, game_state, queries.pop())
+        while queries:
+            term = (GeneralGameManager._game_state_term_single(
+                game_id_term, game_state, queries.pop()) & term)
+        return term
 
 
 class GeneralGame(object):
     """A general game."""
-
-    _empty_game_state_term = Term.from_atom_name('none')
+    _empty_game_state = Atom('none')
     _role_functor = Functor(Atom('role'), 1)
     _input_functor = Functor(Atom('input'), 2)
     _base_functor = Functor(Atom('base'), 1)
 
     def __init__(self, game_manager, game_id):
         self.game_manager = game_manager
-        self.game_id_atom = game_id
-        self.game_id = Term.from_atom_name(game_id)
+        self.game_id = game_id
+
+    def __str__(self):
+        return self.game_id
+
+    def __repr__(self):
+        return 'GeneralGame(game_manager={!r}, game_id={!r})'.format(
+            self.game_manager, self.game_id)
 
     def __eq__(self, other):
         return (self.game_manager == other.game_manager and
-                self.game_id_atom == other.game_id_atom)
+                self.game_id == other.game_id)
 
     def initial_state(self):
         """Return the initial state of the game as a GeneralGameState"""
         return GeneralGameState(self)
 
     def roles(self):
-        """An iterator of the game roles (each a PrologTerm)"""
-        role_variable = Term()
-        role_query_term = Term.from_cons_functor(
-            self._role_functor, role_variable)
+        """An iterator of the game roles.
 
-        with self._stateless_query(role_query_term) as q:
-            while q.next_solution():
-                yield role_variable.get_atom()
+        Yields:
+            Role: A game role.
+        """
+        with Frame():
+            role_variable = Term()
+            role_query_term = self._role_functor(role_variable)
+
+            with self._stateless_query(role_query_term) as q:
+                while q.next_solution():
+                    yield Role._from_atom(role_variable.get_atom())
 
     def num_roles(self):
         """The number of roles in the game."""
         return len(set(self.roles()))
 
-    def all_actions(self, role, persistent):
-        """All possible actions for `role` in this game.
+    def all_actions(self, role):
+        """Iterator over all possible actions for `role` in this game.
 
         This does not represent the legal actions in some state.
         It is an iterator of all actions which may be available to role at some
         time in the game.
 
-        If `persistent` is ``False`` then each yielded term is valid only
-        until the term after it is yielded. If `persistent` is ``True``, then
-        `TermRecord`s are yielded instead of `Term`s.
+        Args:
+            role (Role) : Get actions for this role.
+
+        Yields:
+            Action: A possible action for `role` in this game.
         """
-        action_variable = Term()
-        input_query_term = Term.from_cons_functor(
-            self._input_functor, Term.from_atom(role), action_variable)
+        with Frame() as f:
+            action_variable = f.term()
+            input_query_term = self._input_functor(
+                Term.from_atom(role._atom), action_variable)
 
-        with self._stateless_query(input_query_term) as q:
-            yield from q.term_assignments(action_variable,
-                                          persistent=persistent)
+            query = self._stateless_query(input_query_term)
+            for action in query.term_assignments(action_variable,
+                                                 persistent=True):
+                yield Action._from_term_record(action)
 
-    def base_terms(self, persistent):
-        """A list of the terms which define the game state."""
-        base_variable = Term()
-        base_query_term = Term.from_cons_functor(
-            self._base_functor, base_variable)
+    def base_propositions(self):
+        """An iterator over all base propositions of the game.
 
-        with self._stateless_query(base_query_term) as q:
-            yield from q.term_assignments(base_variable,
-                                          persistent=persistent)
+        A game state is defined by the subset of base propositions that are
+        true for that state.
+        """
+        with Frame() as f:
+            base_variable = f.term()
+            base_query_term = self._base_functor(base_variable)
+
+            query = self._stateless_query(base_query_term)
+            for base_proposition in query.term_assignments(base_variable,
+                                                           persistent=True):
+                yield GameProposition._from_term_record(base_proposition)
 
     def max_utility(self):
         """Maximum utility achievable by any player."""
@@ -223,24 +217,96 @@ class GeneralGame(object):
         """Minimum utility achievable by any player."""
         return 0
 
-    def role_object(self, role):
-        return self.game_manager.role_object(role)
-
-    def action_object(self, action):
-        return Term.from_parsed(action)
-
     def _stateless_query_term(self, *queries):
-        return self._stateful_query_term(self._empty_game_state_term, *queries)
+        return self._stateful_query_term(
+            Term.from_atom(self._empty_game_state), *queries)
 
     def _stateful_query_term(self, state, *queries):
-        return self.game_manager._game_state_term(self.game_id, state, *queries)
+        return self.game_manager._game_state_term(
+            Term.from_atom_name(self.game_id), state, *queries)
 
     def _stateless_query(self, *queries):
-        return self._stateful_query(self._empty_game_state_term, *queries)
+        return self._stateful_query(
+            Term.from_atom(self._empty_game_state), *queries)
 
     def _stateful_query(self, state, *queries):
-        return self.game_manager._game_state_query(
-            self.game_id, state, *queries)
+        return Query.call_term(self.game_manager._game_state_term(
+            Term.from_atom_name(self.game_id), state, *queries))
+
+
+class Role():
+    """A game role."""
+    def __init__(self, role):
+        """Initialize `Role` object from name.
+
+        Args:
+            role (str) : Name of the role.
+        """
+        self._atom = Atom(role)
+
+    @classmethod
+    def _from_atom(cls, atom):
+        """Create `Role` object from a role atom.
+
+        Args:
+            role_atom (swilite.Atom) : Role to create.
+        """
+        new_role = cls.__new__(cls)
+        new_role._atom = atom
+        return new_role
+
+    def __str__(self):
+        """The role name as a string."""
+        return str(self._atom)
+
+    def __eq__(self, other):
+        return self._atom == other._atom
+
+    def __hash__(self):
+        return hash(self._atom)
+
+
+class _GdlTermRecordWrapper():
+    def __init__(self, gdl):
+        """Initialize by parsing a GDL string.
+
+        Args:
+            gdl (str) : GDL string to parse.
+        """
+        with Frame():
+            self._term_record = TermRecord(
+                prefix_gdl_statement_to_prolog(gdl))
+
+    @classmethod
+    def _from_term_record(cls, term_record):
+        """Initialize from a term record."""
+        obj = cls.__new__(cls)
+        obj._term_record = term_record
+        return obj
+
+    def __str__(self):
+        """Representation as a GDL string."""
+        with Frame():
+            return prolog_term_to_prefix_gdl(self._term_record.get())
+
+    def __eq__(self, other):
+        with Frame():
+            try:
+                return self._term_record.get() == other._term_record.get()
+            except AttributeError as e:
+                if '_term_record' not in str(e):
+                    raise
+                return NotImplemented
+
+
+class Action(_GdlTermRecordWrapper):
+    """A game action."""
+    pass
+
+
+class GameProposition(_GdlTermRecordWrapper):
+    """A proposition about the game state."""
+    pass
 
 
 class GeneralGameState(object):
@@ -282,19 +348,17 @@ class GeneralGameState(object):
             self.move_history = move_history
 
         if truth_history is None:
-            args = TermList(3)
-            args[0].put_term(self.game_id())
-            args[1].put_term(self.move_history)
-            self._truth_history_3_predicate(args, check=True)
-            self.truth_history = Term.from_term(args[2])
+            self.truth_history = Term()
+            self._truth_history_3_predicate(
+                Term.from_atom_name(self.game_id()), self.move_history,
+                self.truth_history, check=True)
         else:
             self.truth_history = truth_history
 
         if truth_state is None:
-            args = TermList(2)
-            args[0].put_term(self.truth_history)
-            self._final_truth_state_predicate(args, check=True)
-            self.truth_state = Term.from_term(args[1])
+            self.truth_state = Term()
+            self._final_truth_state_predicate(
+                self.truth_history, self.truth_state, check=True)
         else:
             self.truth_state = truth_state
 
@@ -304,83 +368,93 @@ class GeneralGameState(object):
 
     def turn_number(self):
         """The current turn number."""
-        args = TermList(2)
-        args[0].put_term(self.move_history)
-        self._length_predicate(args, check=True)
-        return int(args[1])
+        with Frame():
+            num_moves = Term()
+            self._length_predicate(self.move_history, num_moves, check=True)
+            return int(num_moves)
 
     def utility(self, role):
         """The utility of the current state for the given role."""
-        utility = Term()
-        utility_query = Term.from_cons_functor(
-            self._goal_functor, Term.from_atom(role), utility)
-        self._query_term(utility_query)(check=True)
-        if utility.is_atom():
-            return int(str(utility))
-        else:
-            return int(utility)
+        with Frame():
+            utility = Term()
+            utility_query = self._goal_functor(
+                Term.from_atom(role._atom), utility)
+            self._query_term(utility_query)(check=True)
 
-    def legal_actions(self, role, persistent):
+            if utility.is_atom():
+                return int(utility.get_atom_name())
+            else:
+                return int(utility)
+
+    def legal_actions(self, role):
         """An iterator of legal actions for role in the current state."""
-        action = Term()
-        action_query = Term.from_cons_functor(
-            self._legal_functor, Term.from_atom(role), action)
-        with self._query(action_query) as q:
-            yield from q.term_assignments(action, persistent=persistent)
+        with Frame() as f:
+            action = f.term()
+            action_query = self._legal_functor(
+                Term.from_atom(role._atom), action)
 
-    def state_terms(self, persistent):
-        """Iterator of the base terms that are true for this state."""
-        state_term = Term()
-        base_term_query = Term.from_cons_functor(
-            self._base_functor, state_term)
-        true_term_query = Term.from_cons_functor(
-            self._true_functor, state_term)
-        with self._query(base_term_query, true_term_query) as q:
-            yield from q.term_assignments(state_term, persistent=persistent)
+            query = self._query(action_query)
+            for action_assignment in query.term_assignments(action,
+                                                            persistent=True):
+                yield Action._from_term_record(action_assignment)
+
+    def state_propositions(self):
+        """Iterator of the base propositions that are true for this state."""
+        with Frame() as f:
+            state_term = f.term()
+            base_term_query = self._base_functor(state_term)
+            true_term_query = self._true_functor(state_term)
+
+            query = self._query(base_term_query, true_term_query)
+            for state_term_assignment in query.term_assignments(
+                    state_term, persistent=True):
+                yield GameProposition._from_term_record(
+                    state_term_assignment)
 
     def is_terminal(self):
         """True if the current game state is terminal."""
-        return self._query_term(Term.from_atom(self._terminal_atom))()
+        with Frame():
+            return self._query_term(Term.from_atom(self._terminal_atom))()
 
     def apply_moves(self, moves):
         """A new game state representing the game after moves are applied.
 
         Returns a new state, this state is unchanged.
-        `moves` is a dictionary of role => action.
+        Args:
+            moves (dict) : Dictionary of Role => Action.
         """
-        moves_term = make_list_term(*[
-            Term.from_cons_functor(self._does_functor,
-                                   Term.from_atom(role), action)
+        game_id_term = Term.from_atom_name(self.game_id())
+
+        moves_term = Term.from_list_terms([
+            self._does_functor(Term.from_atom(role._atom),
+                               action._term_record.get())
             for (role, action) in moves.items()])
 
         # prepare_moves(game_id, moves_term, PreparedMoves)
         prepared_moves = Term()
-        prepare_moves_query = Term.from_cons_functor(
-            self._prepare_moves_functor,
-            self.game_id(), moves_term, prepared_moves)
+        prepare_moves_query = self._prepare_moves_functor(
+            game_id_term, moves_term, prepared_moves)
 
         # NewMoveHistory = [PreparedMoves | old_move_history]
         new_move_history = Term()
-        move_history_query = Term.from_cons_functor(
-            self._eq_functor, new_move_history, Term.from_cons_list(
-                prepared_moves, self.move_history))
+        move_history_query = self._eq_functor(
+            new_move_history,
+            Term.from_cons_list(prepared_moves, self.move_history))
 
         # truth_history(game_id, NewMoveHistory, old_truth_history,
         #               NewTruthHistory)
         new_truth_history = Term()
-        truth_history_query = Term.from_cons_functor(
-            self._truth_history_4_functor,
-            self.game_id(), new_move_history, self.truth_history,
+        truth_history_query = self._truth_history_4_functor(
+            game_id_term, new_move_history, self.truth_history,
             new_truth_history)
 
         # final_truth_state(NewTruthHistory, NewTruthState)
         new_truth_state = Term()
-        truth_state_query = Term.from_cons_functor(
-            self._final_truth_state_functor,
+        truth_state_query = self._final_truth_state_functor(
             new_truth_history, new_truth_state)
 
-        make_and_term(prepare_moves_query, move_history_query,
-                      truth_history_query, truth_state_query)(check=True)
+        (prepare_moves_query & move_history_query & truth_history_query &
+         truth_state_query)(check=True)
 
         return GeneralGameState(
             game=self.game,
@@ -391,9 +465,6 @@ class GeneralGameState(object):
 
     def game_id(self):
         return self.game.game_id
-
-    def role_object(self, role):
-        return self.game.role_object(role)
 
     def _query_term(self, *queries):
         return self.game._stateful_query_term(self.truth_state, *queries)

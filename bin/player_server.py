@@ -1,9 +1,10 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import argparse
 import inspect
 import logging
 
+from ggp.gamestate import GeneralGameManager
 from ggp.players import (
     AlphaBeta,
     BoundedDepth,
@@ -16,6 +17,8 @@ from ggp.players import (
     Random,
     SequentialPlanner,
 )
+from ggp.playerserver import run_player_server
+
 player_classes = [
     AlphaBeta,
     BoundedDepth,
@@ -42,7 +45,7 @@ class LogLevel(object):
 def main():
     parser = argparse.ArgumentParser(description="General Game Player Server")
     parser.add_argument('-P', '--port', type=int, default=9147,
-                        help="Port on which the server listens. (default 9147)")
+                        help="Port the server listens on. (default 9147)")
     parser.add_argument('--log', type=LogLevel, default='info',
                         dest='log_level',
                         help=("Set logging level. "
@@ -58,16 +61,14 @@ def main():
         player_doc = inspect.getdoc(player)
         player_help = (player_doc.splitlines()[0] if player_doc is not None
                        else None)
-        player_parser = subparsers.add_parser(player.__name__, help=player_help)
+        player_parser = subparsers.add_parser(player.__name__,
+                                              help=player_help)
         for param_name, description in player.PARAMETER_DESCRIPTIONS.items():
             if 'default' in description.dict:
                 param_name = '--' + param_name
             player_parser.add_argument(param_name, **description.dict)
 
     args = parser.parse_args()
-
-    from ggp.gamestate import GeneralGameManager
-    from ggp.playerserver import run_player_server
 
     player_class_dict = {class_.__name__: class_
                          for class_ in player_classes}

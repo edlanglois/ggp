@@ -6,7 +6,7 @@ import operator
 import random
 import signal
 
-from ggp.gamestate import ActionRecord
+import ggp.gamestate
 
 __all__ = [
     'AlphaBeta',
@@ -79,7 +79,7 @@ class GamePlayer(object):
         self.game = game
         self.play_clock = play_clock
 
-        self.role = self.game.role_object(role)
+        self.role = ggp.gamestate.Role(role)
         self.roles = tuple(self.game.roles())
         self.game_state = self.game.initial_state()
 
@@ -89,7 +89,7 @@ class GamePlayer(object):
 
     def _moves_dict(self, action_list):
         assert(len(self.roles) == len(action_list))
-        return {role: self.game.action_object(str(action))
+        return {role: ggp.gamestate.Action(action)
                 for role, action in zip(self.roles, action_list)}
 
     def update_moves(self, new_moves):
@@ -100,8 +100,8 @@ class GamePlayer(object):
         for role in self.roles:
             logger.debug('Utility for {role!s}: {utility!s}'.format(
                 role=role, utility=self.game_state.utility(role)))
-        for base in self.game_state.state_terms(persistent=False):
-            self.logger.debug("\t%s", str(base))
+        for prop in self.game_state.state_propositions():
+            self.logger.debug("\t%s", str(prop))
 
         moves = self._moves_dict(action_list=new_moves)
         self.game_state = self.game_state.apply_moves(moves)
@@ -182,9 +182,9 @@ class PlayerTimingMixin(object):
 
 
 def first_action(game_state, role):
-    actions = game_state.legal_actions(role, persistent=False)
+    actions = game_state.legal_actions(role)
     try:
-        return str(next(actions))
+        return next(actions)
     finally:
         actions.close()
 
@@ -192,32 +192,21 @@ def first_action(game_state, role):
 class Legal(GamePlayer):
     """Plays the first legal move."""
     def get_move(self):
-        return first_action(self.game_state, self.role)
+        return str(first_action(self.game_state, self.role))
 
 
 def random_action(game_state, role, as_string):
-    random_action = None
-    if as_string:
-        prep_action = str
-    else:
-        prep_action = ActionRecord
-
-    for i, action in enumerate(
-            game_state.legal_actions(role, persistent=False)):
+    selected_action = None
+    for i, action in enumerate(game_state.legal_actions(role)):
         if random.randint(0, i) == 0:
-            random_action = prep_action(action)
-
-    if as_string:
-        return random_action
-    else:
-        return random_action.get()
+            selected_action = action
+    return selected_action
 
 
 class Random(GamePlayer):
     """Plays a random legal move."""
     def get_move(self):
-        return random_action(game_state=self.game_state, role=self.role,
-                             as_string=True)
+        return str(random_action(game_state=self.game_state, role=self.role))
 
 
 class SearchPlayer(GamePlayer):
@@ -357,7 +346,8 @@ class Minimax(SearchPlayer):
             min_step_score = self.max_utility + 1
             min_step_score_move_sequence = ()
 
-            for other_roles_moves in itertools.product(*other_roles_move_lists):
+            for other_roles_moves in itertools.product(
+                    *other_roles_move_lists):
                 moves = dict(other_roles_moves + ((self.role, own_move),))
                 score, move_sequence = self.score_estimate_and_move_sequence(
                     game_state=game_state.apply_moves(moves),
@@ -391,7 +381,8 @@ class Minimax(SearchPlayer):
     def max_step_break(self, score, min_step_score):
         return score == self.max_utility
 
-    def non_recursive_score_estimate_and_move_sequence(self, game_state, depth):
+    def non_recursive_score_estimate_and_move_sequence(self, game_state,
+                                                       depth):
         if game_state.is_terminal():
             return True, game_state.utility(self.role), ()
         return False, None, None
@@ -447,7 +438,8 @@ class BoundedDepth(Minimax, PlayerTimingMixin):
             for role_ in self.roles
         }
 
-    def non_recursive_score_estimate_and_move_sequence(self, game_state, depth):
+    def non_recursive_score_estimate_and_move_sequence(self, game_state,
+                                                       depth):
         if game_state.is_terminal():
             return True, game_state.utility(self.role), ()
         elif depth >= self.max_depth:
@@ -716,7 +708,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
 
     def simulate_game(self, node, timer):
         return self.normalize_score(self.game_simulator.play_random_game(
-                node.game_state.game_state, timer))
+            node.game_state.game_state, timer))
 
     def backpropagate_terminal_node(self, path, node):
         score = self.node_game_state_score(node)
@@ -801,9 +793,7 @@ class MonteCarloTreeSearch(GamePlayer, PlayerTimingMixin):
 
         def _get_unseen_actions(self):
             unseen_actions = [
-                ActionRecord(action) for action
-                in self.game_state.legal_actions(
-                    role=self.role, persistent=False)
+                action for action in self.game_state.legal_actions(self.role)
                 if str(action) not in self.action_child]
             random.shuffle(unseen_actions)
             return unseen_actions

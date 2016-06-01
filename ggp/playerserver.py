@@ -4,12 +4,7 @@ import http.server
 import logging
 import sys
 
-from ggp.languages.prolog import PrologTerm, UnparsedPrologTerm
 from ggp.languages.sexpressions import s_expression_parser, SExpression
-from ggp.languages.translation.pgdl_prolog import (
-    PrefixGdlToProlog,
-    PrologToPrefixGdl,
-)
 
 __all__ = [
     'run_player_server',
@@ -69,8 +64,6 @@ class SerialGeneralGamePlayingMessageHandler(object):
         self.game_manager = game_manager
         self.player_factory = player_factory
         self.game_players = dict()
-        self.prefix_gdl_to_prolog = PrefixGdlToProlog(bijective=True)
-        self.prolog_to_prefix_gdl = PrologToPrefixGdl(bijective=True)
 
     def handle_message(self, message):
         message = ' '.join(message)
@@ -131,9 +124,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
         logger.info("Play clock: " + str(play_clock))
 
         self.game_manager.create_game(
-            game_id,
-            self.prefix_gdl_to_prolog.translate(
-                '\n'.join(str(expr) for expr in game_description)))
+            game_id, '\n'.join(str(expr) for expr in game_description))
 
         player = self.player_factory(
             game=self.game_manager.game(game_id),
@@ -151,8 +142,8 @@ class SerialGeneralGamePlayingMessageHandler(object):
 
         game_id = args[0]
         new_moves = args[1]
-        logger.debug("Game ID: " + game_id)
-        logger.debug("New moves: " + str(new_moves))
+        logger.info("Game ID: " + game_id)
+        logger.info("New moves: " + str(new_moves))
 
         player = self.get_game_player(game_id)
 
@@ -165,15 +156,11 @@ class SerialGeneralGamePlayingMessageHandler(object):
             run_update = new_moves_lower != 'nil'
 
         if run_update:
-            player.update_moves(self._translate_new_moves_to_prolog(new_moves))
+            player.update_moves(new_moves)
 
         move = player.get_move()
         logger.info("Selected move: " + str(move))
-        if not isinstance(move, PrologTerm):
-            move = UnparsedPrologTerm(str(move))
-        if isinstance(move, UnparsedPrologTerm):
-            move = move.parse()
-        return self.prolog_to_prefix_gdl.translate_parsed_prolog_term(move)
+        return move
 
     def do_stop(self, args):
         logger.info("Received stop message.")
@@ -188,7 +175,7 @@ class SerialGeneralGamePlayingMessageHandler(object):
         player = self.get_game_player(game_id)
 
         if new_moves != 'nil':
-            player.update_moves(self._translate_new_moves_to_prolog(new_moves))
+            player.update_moves(new_moves)
 
         player.stop()
         del self.game_players[game_id]
@@ -206,10 +193,6 @@ class SerialGeneralGamePlayingMessageHandler(object):
         player.abort()
         del self.game_players[game_id]
         return 'done'
-
-    def _translate_new_moves_to_prolog(self, new_moves):
-        return [self.prefix_gdl_to_prolog.translate_to_single_term(str(move))
-                for move in new_moves]
 
 
 def make_general_game_playing_request_handler(message_handler):
@@ -287,7 +270,7 @@ def run_player_server(game_manager, player_factory, port=9147,
             game_manager=game_manager,
             player_factory=player_factory))
 
-    for attempt_index in range(1,  port_search_max_tries + 1):
+    for attempt_index in range(1, port_search_max_tries + 1):
         try:
             server = ExceptionalHttpServer(('', port), handler)
             break

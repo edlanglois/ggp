@@ -7,6 +7,8 @@ from nose.tools import (
     assert_equal,
     assert_false,
     assert_is_instance,
+    assert_not_equal,
+    assert_regex,
     assert_true,
 )
 import nosepipe
@@ -15,12 +17,40 @@ from ggp.gamestate import (
     GeneralGameManager,
     GeneralGame,
     GeneralGameState,
+    Action,
+    Role,
+    GameProposition,
 )
 
 faulthandler.enable()
 MODULE_DIR = os.path.dirname(os.path.relpath(__file__))
-BUTTONS_AND_LIGHTS_FILE = os.path.join(MODULE_DIR, 'buttonsandlights.pl')
-TIC_TAC_TOE_FILE = os.path.join(MODULE_DIR, 'tictactoe.pl')
+BUTTONS_AND_LIGHTS_FILE = os.path.join(MODULE_DIR, 'buttonsandlights.gdl')
+TIC_TAC_TOE_FILE = os.path.join(MODULE_DIR, 'tictactoe.gdl')
+
+
+def test_role__str__():
+    assert_equal(str(Role('foo')), 'foo')
+
+
+def test_role__eq__():
+    assert_equal(Role('foo'), Role('foo'))
+    assert_not_equal(Role('foo'), Role('bar'))
+
+
+def test_action__str__():
+    assert_equal(str(Action('(foo bar)')), '(foo bar)')
+    assert_equal(str(Action('foo')), 'foo')
+
+
+def test_action__eq__():
+    assert_equal(Action('foo'), Action('foo'))
+    assert_not_equal(Action('foo'), Action('bar'))
+
+
+def test_game_proposition__str__():
+    assert_regex(
+        str(GameProposition('(baz (foo ?x) (bar ?x))')),
+        r'\(baz \(foo (\?[_A-Z][_A-Za-z0-9]*)\) \(bar \1\)\)')
 
 
 @nosepipe.isolate
@@ -29,7 +59,8 @@ def test_general_game_manager():
     assert not ggm.game_exists('buttonsandlights')
 
     with open(BUTTONS_AND_LIGHTS_FILE, 'r') as f:
-        buttons_and_lights_rules = [line.strip() for line in f.readlines()]
+        buttons_and_lights_rules = '\n'.join(line.strip() for line in
+                                             f.readlines())
 
     ggm.create_game('buttonsandlights', buttons_and_lights_rules)
     assert ggm.game_exists('buttonsandlights')
@@ -42,7 +73,7 @@ def test_general_game_manager():
     assert_is_instance(ggm.game('buttonsandlights'), GeneralGame)
 
     with open(TIC_TAC_TOE_FILE, 'r') as f:
-        tic_tac_toe_rules = [line.strip() for line in f.readlines()]
+        tic_tac_toe_rules = '\n'.join(line.strip() for line in f.readlines())
 
     # Create a new game
     ggm.create_game('tictactoe', tic_tac_toe_rules)
@@ -54,23 +85,32 @@ def test_general_game_manager():
 
 def make_game_manager(game_name, rules_file):
     with open(rules_file, 'r') as f:
-        rules = [line.strip() for line in f.readlines()]
+        rules = '\n'.join(line for line
+                          in (line.strip() for line in f.readlines())
+                          if line and not line.startswith(';'))
 
     ggm = GeneralGameManager()
     ggm.create_game(game_name, rules)
     return ggm
 
 
-class BaseTestGeneralGame(object):
-    def __init__(self, game_name, game_rules_file, roles, actions, base_terms):
+def assert_object_sets_equal(a, b):
+    assert_equal({str(obj): obj for obj in a}, {str(obj): obj for obj in b})
+
+
+class BaseTestGeneralGame():
+    def __init__(self, game_name, game_rules_file, roles, actions,
+                 base_propositions):
         self.game_name = game_name
         self.game_rules_file = game_rules_file
-        self.roles = roles
+        self.roles = [Role(role) for role in roles]
+        actions = [Action(action) for action in actions]
         if isinstance(actions, dict):
             self.actions = actions
         else:
             self.actions = {role: actions for role in self.roles}
-        self.base_terms = base_terms
+        self.base_propositions = [GameProposition(prop)
+                                  for prop in base_propositions]
 
     def setUp(self):
         self.ggm = make_game_manager(self.game_name, self.game_rules_file)
@@ -84,56 +124,47 @@ class BaseTestGeneralGame(object):
         assert_is_instance(self.game.initial_state(), GeneralGameState)
 
     def test_roles_iterating(self):
-        assert_equal(sorted([str(role) for role in self.game.roles()]),
-                     sorted(list(self.roles)))
+        assert_object_sets_equal(self.game.roles(), self.roles)
 
     def test_roles_not_iterating(self):
-        assert_equal(sorted([str(role) for role in list(self.game.roles())]),
-                     sorted(list(self.roles)))
+        assert_object_sets_equal(list(self.game.roles()), self.roles)
 
     def test_num_roles(self):
         assert_equal(self.game.num_roles(), len(self.roles))
 
-    def test_role_object(self):
+    def test_roles(self):
         for role in self.roles:
-            role_object = self.game.role_object(role)
-            assert_equal(str(role_object), role)
-            list(self.game.all_actions(role_object, persistent=False))
+            assert_equal(Role(str(role)), role)
 
-    def test_action_object(self):
-        action = next(iter(next(iter(self.actions.values()))))
-        action_object = self.game.action_object(action)
-        assert_equal(str(action_object), action)
+    def test_action(self):
+        seen_actions = set()
+        for action_list in self.actions.values():
+            for action in action_list:
+                action_str = str(action)
+                if action_str in seen_actions:
+                    continue
+                seen_actions.add(action_str)
+                assert_equal(Action(action_str), action)
 
     def test_all_actions_iterating(self):
         for role in self.roles:
-            role_object = self.game.role_object(role)
-            assert_equal(
-                sorted([str(move) for move
-                        in self.game.all_actions(role_object,
-                                                 persistent=False)]),
-                sorted(list(self.actions[role])))
+            print('expected', *sorted(str(a) for a in self.actions[role]))
+            print('results ', *sorted(str(a) for a in self.game.all_actions(role)))
+            assert_object_sets_equal(self.game.all_actions(role),
+                                     self.actions[role])
 
     def test_all_actions_not_iterating(self):
         for role in self.roles:
-            role_object = self.game.role_object(role)
-            assert_equal(
-                sorted([str(move.get()) for move
-                        in list(self.game.all_actions(role_object,
-                                                      persistent=True))]),
-                sorted(list(self.actions[role])))
+            assert_object_sets_equal(list(self.game.all_actions(role)),
+                                     self.actions[role])
 
-    def test_base_terms_iterating(self):
-        assert_equal(
-            sorted([str(term) for term
-                    in self.game.base_terms(persistent=False)]),
-            sorted(list(self.base_terms)))
+    def test_base_propositions_iterating(self):
+        assert_object_sets_equal(self.game.base_propositions(),
+                                 self.base_propositions)
 
-    def test_base_terms_not_iterating(self):
-        assert_equal(
-            sorted([str(term.get()) for term
-                    in list(self.game.base_terms(persistent=True))]),
-            sorted(list(self.base_terms)))
+    def test_base_propositions_not_iterating(self):
+        assert_object_sets_equal(list(self.game.base_propositions()),
+                                 self.base_propositions)
 
     def test_max_utility(self):
         assert_equal(self.game.max_utility(), 100)
@@ -149,7 +180,8 @@ class TestGeneralGameButtonsAndLights(BaseTestGeneralGame):
             game_rules_file=BUTTONS_AND_LIGHTS_FILE,
             roles=['robot'],
             actions=['a', 'b', 'c'],
-            base_terms=['1', '2', '3', '4', '5', '6', '7', 'p', 'q', 'r'])
+            base_propositions=['1', '2', '3', '4', '5', '6', '7', 'p', 'q',
+                               'r'])
 
 
 class TestGeneralGameTicTacToe(BaseTestGeneralGame):
@@ -158,21 +190,23 @@ class TestGeneralGameTicTacToe(BaseTestGeneralGame):
             game_name='tictactoe',
             game_rules_file=TIC_TAC_TOE_FILE,
             roles=['white', 'black'],
-            actions=['mark({},{})'.format(i, j)
+            actions=['(mark {} {})'.format(i, j)
                      for i in range(1, 4) for j in range(1, 4)],
-            base_terms=(
-                ['step({})'.format(i) for i in range(1, 8)] +
-                ['cell({},{},{})'.format(i, j, x)
+            base_propositions=(
+                ['(step {})'.format(i) for i in range(1, 8)] +
+                ['(cell {} {} {})'.format(i, j, x)
                  for i in range(1, 4) for j in range(1, 4) for x in 'xob'])
         )
 
 
-class TestGeneralGameStateButtonsAndLights(object):
+class TestGeneralGameStateButtonsAndLights():
     def setUp(self):
         ggm = make_game_manager('buttonsandlights', BUTTONS_AND_LIGHTS_FILE)
         self.game = GeneralGame(ggm, 'buttonsandlights')
-        self.role = self.game.role_object('robot')
+        self.role = Role('robot')
         self.initial_state = self.game.initial_state()
+        # Legal actions for all game states and roles.
+        self.legal_actions = [Action(action) for action in 'abc']
 
     def test_turn_number(self):
         assert_equal(self.initial_state.turn_number(), 0)
@@ -181,30 +215,22 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(self.initial_state.utility(self.role), 0)
 
     def test_legal_actions_iterating(self):
-        assert_equal(
-            sorted([str(move) for move
-                    in self.initial_state.legal_actions(self.role,
-                                                        persistent=False)]),
-            sorted(['a', 'b', 'c']))
+        assert_object_sets_equal(self.initial_state.legal_actions(self.role),
+                                 self.legal_actions)
 
     def test_legal_actions_not_iterating(self):
-        assert_equal(
-            sorted([str(move.get()) for move
-                    in list(self.initial_state.legal_actions(
-                        self.role, persistent=True))]),
-            sorted(['a', 'b', 'c']))
+        assert_object_sets_equal(self.initial_state.legal_actions(self.role),
+                                 self.legal_actions)
 
     def test_state_terms_iterating(self):
-        assert_equal(
-            sorted([str(term) for term
-                    in self.initial_state.state_terms(persistent=False)]),
-            sorted(['1']))
+        assert_object_sets_equal(
+            self.initial_state.state_propositions(),
+            [GameProposition(prop) for prop in '1'])
 
     def test_state_terms_not_iterating(self):
-        assert_equal(
-            sorted([str(term.get()) for term
-                    in list(self.initial_state.state_terms(persistent=True))]),
-            sorted(['1']))
+        assert_object_sets_equal(
+            list(self.initial_state.state_propositions()),
+            [GameProposition(prop) for prop in '1'])
 
     def test_is_terminal(self):
         assert_false(self.initial_state.is_terminal())
@@ -213,43 +239,34 @@ class TestGeneralGameStateButtonsAndLights(object):
         assert_equal(str(self.initial_state.game_id()), 'buttonsandlights')
 
     def test_apply_moves_once(self):
-        action = self.game.action_object('a')
+        action = Action('a')
         new_state = self.initial_state.apply_moves({self.role: action})
 
         assert_equal(new_state.turn_number(), 1)
         assert_equal(new_state.utility(self.role), 0)
-        assert_equal(
-            sorted([str(move) for move
-                    in new_state.legal_actions(self.role, persistent=False)]),
-            sorted(['a', 'b', 'c']))
-        assert_equal(
-            sorted([str(term) for term
-                    in new_state.state_terms(persistent=False)]),
-            sorted(['2', 'p']))
+        assert_object_sets_equal(new_state.legal_actions(self.role),
+                                 self.legal_actions)
+        assert_object_sets_equal(new_state.state_propositions(),
+                                 [GameProposition(prop) for prop in '2p'])
         assert_false(new_state.is_terminal())
 
     def test_apply_moves_check_initial(self):
-        action = self.game.action_object('a')
+        action = Action('a')
         self.initial_state.apply_moves({self.role: action})
 
         # Check that the initial state is unchanged
         assert_equal(self.initial_state.turn_number(), 0)
         assert_equal(self.initial_state.utility(self.role), 0)
-        assert_equal(
-            sorted([str(move) for move
-                    in self.initial_state.legal_actions(self.role,
-                                                        persistent=False)]),
-            sorted(['a', 'b', 'c']))
-        assert_equal(
-            sorted([str(term) for term
-                    in self.initial_state.state_terms(persistent=False)]),
-            sorted(['1']))
+        assert_object_sets_equal(self.initial_state.legal_actions(self.role),
+                                 self.legal_actions)
+        assert_object_sets_equal(self.initial_state.state_propositions(),
+                                 [GameProposition(prop) for prop in '1'])
         assert_false(self.initial_state.is_terminal())
 
     def test_apply_moves_full_game_won(self):
-        a = self.game.action_object('a')
-        b = self.game.action_object('b')
-        c = self.game.action_object('c')
+        a = Action('a')
+        b = Action('b')
+        c = Action('c')
         final_state = self.initial_state.apply_moves(
             {self.role: a}).apply_moves(
             {self.role: b}).apply_moves(
@@ -260,20 +277,16 @@ class TestGeneralGameStateButtonsAndLights(object):
 
         assert_equal(final_state.turn_number(), 6)
         assert_equal(final_state.utility(self.role), 100)
-        assert_equal(
-            sorted([str(move) for move
-                    in final_state.legal_actions(self.role, persistent=False)]),
-            sorted(['a', 'b', 'c']))
-        assert_equal(
-            sorted([str(term) for term
-                    in final_state.state_terms(persistent=False)]),
-            sorted(['7', 'p', 'q', 'r']))
+        assert_object_sets_equal(final_state.legal_actions(self.role),
+                                 self.legal_actions)
+        assert_object_sets_equal(final_state.state_propositions(),
+                                 [GameProposition(prop) for prop in '7pqr'])
         assert_true(final_state.is_terminal())
 
     def test_apply_moves_full_game_lost(self):
-        a = self.game.action_object('a')
-        b = self.game.action_object('b')
-        c = self.game.action_object('c')
+        a = Action('a')
+        b = Action('b')
+        c = Action('c')
         final_state = self.initial_state.apply_moves(
             {self.role: a}).apply_moves(
             {self.role: b}).apply_moves(
@@ -284,14 +297,10 @@ class TestGeneralGameStateButtonsAndLights(object):
 
         assert_equal(final_state.turn_number(), 6)
         assert_equal(final_state.utility(self.role), 0)
-        assert_equal(
-            sorted([str(move) for move
-                    in final_state.legal_actions(self.role, persistent=False)]),
-            sorted(['a', 'b', 'c']))
-        assert_equal(
-            sorted([str(term) for term
-                    in final_state.state_terms(persistent=False)]),
-            sorted(['7', 'p', 'r']))
+        assert_object_sets_equal(final_state.legal_actions(self.role),
+                                 self.legal_actions)
+        assert_object_sets_equal(final_state.state_propositions(),
+                                 [GameProposition(prop) for prop in '7pr'])
         assert_true(final_state.is_terminal())
 
 
@@ -300,26 +309,26 @@ def test_play_tic_tac_toe():
     game = ggm.game('tictactoe')
     state0 = game.initial_state()
 
-    black = game.role_object('black')
-    white = game.role_object('white')
-    actions = {i: {j: game.action_object("mark('{}', '{}')".format(i, j))
+    black = Role('black')
+    white = Role('white')
+    actions = {i: {j: Action("(mark {} {})".format(i, j))
                    for j in range(1, 4)}
                for i in range(1, 4)}
-    assert_equal({str(action) for action
-                  in game.all_actions(white, persistent=False)},
-                 set(itertools.chain(
-                     *((str(action) for action in value.values())
-                       for value in actions.values()))))
+
+    all_actions = list(itertools.chain(*(
+        value.values() for value in actions.values())))
+    assert_object_sets_equal(game.all_actions(white), all_actions)
+    assert_object_sets_equal(game.all_actions(black), all_actions)
 
     assert_equal(state0.turn_number(), 0)
     assert_equal(state0.utility(white), 50)
     assert_equal(state0.utility(black), 50)
     assert_false(state0.is_terminal())
-    assert_equal(sorted([str(term) for term
-                         in state0.state_terms(persistent=False)]),
-                 sorted(['cell({},{},b)'.format(i, j)
-                         for i in range(1, 4) for j in range(1, 4)] +
-                        ['step(1)']))
+    assert_object_sets_equal(
+        state0.state_propositions(),
+        [GameProposition('(cell {} {} b)'.format(i, j))
+         for i in range(1, 4) for j in range(1, 4)] +
+        [GameProposition('(step 1)')])
 
     state1 = state0.apply_moves({black: actions[2][2], white: actions[2][3]})
     state2 = state1.apply_moves({black: actions[1][2], white: actions[1][3]})
@@ -329,11 +338,10 @@ def test_play_tic_tac_toe():
     assert_equal(state3.utility(white), 50)
     assert_equal(state3.utility(black), 50)
     assert_false(state3.is_terminal())
-    assert_equal(
-        sorted([str(action) for action
-                in state3.legal_actions(white, persistent=False)]),
-        sorted(["mark({},{})".format(i, j)
-                for i, j in [(1, 1), (3, 2), (3, 3)]]))
+    assert_object_sets_equal(
+        state3.legal_actions(white),
+        [GameProposition('(mark {} {})'.format(i, j))
+         for i, j in [(1, 1), (3, 2), (3, 3)]])
 
     state4_won = state3.apply_moves({black: actions[3][2],
                                      white: actions[1][1]})

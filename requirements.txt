@@ -1,8 +1,0 @@
-git+https://github.com/EdTsft/pyswip@master
-
-# Development Tools
-nose
-nosepipe
-
-
--e .

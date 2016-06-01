@@ -56,7 +56,8 @@ def test_s_expression_list():
     assert_equal(sl[0], s_foo)
     assert_equal(sl[1], s_bar)
     assert_equal(str(sl), '(foo) (bar baz)')
-    assert_equal(repr(sl), 'SExpressionList(({!r}, {!r}))'.format(s_foo, s_bar))
+    assert_equal(repr(sl),
+                 'SExpressionList(({!r}, {!r}))'.format(s_foo, s_bar))
 
 
 class TestSExpressionParser():
