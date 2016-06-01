@@ -143,7 +143,8 @@
 		% This is just a convenience function. If making many game state queries, it
 		% is more efficient to generate the TruthState once and use with each
 		% game_state query.
-		move_history_game_state/3
+		move_history_game_state/3,
+		truth_history_lengths/6
 	]
 ).
 
@@ -352,13 +353,14 @@ truth_history_lengths(GameId, MoveHistory, CachedTruthHistory,
 truth_history_lengths(GameId, [], [],
                       1, 0,
                       [(start, TruthState)]) :-
-	setof(
+	findall(
 		Fact,
 		(
 			game_state_(GameId, _, _, base(Fact)),
 			game_state_(GameId, _, _, init(Fact))
 		),
-		TruthState).
+		FactsList),
+	list_to_set(FactsList, TruthState).
 truth_history_lengths(GameId, [Moves | MoveHistory], CachedTruthHistory,
                       NumStates, CachedTruthHistoryLen,
                       [(Moves, TruthState)| TruthHistory]):-
