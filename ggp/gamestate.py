@@ -337,40 +337,40 @@ class GeneralGameState(object):
         module=GeneralGameManager._ggp_state)
 
     def __init__(self, game,
-                 move_history=None,
-                 truth_history=None,
-                 truth_state=None):
+                 move_history_term=None,
+                 truth_history_term=None,
+                 truth_state_term=None):
         self.game = game
 
-        if move_history is None:
-            self.move_history = Term.from_nil()
-        else:
-            self.move_history = move_history
+        with Frame():
+            if move_history_term is None:
+                move_history_term = Term.from_nil()
+            self.move_history = TermRecord(move_history_term)
 
-        if truth_history is None:
-            self.truth_history = Term()
-            self._truth_history_3_predicate(
-                Term.from_atom_name(self.game_id()), self.move_history,
-                self.truth_history, check=True)
-        else:
-            self.truth_history = truth_history
+            if truth_history_term is None:
+                truth_history_term = Term()
+                self._truth_history_3_predicate(
+                    self._game_id_term(), move_history_term,
+                    truth_history_term, check=True)
+            self.truth_history = TermRecord(truth_history_term)
 
-        if truth_state is None:
-            self.truth_state = Term()
-            self._final_truth_state_predicate(
-                self.truth_history, self.truth_state, check=True)
-        else:
-            self.truth_state = truth_state
+            if truth_state_term is None:
+                truth_state_term = Term()
+                self._final_truth_state_predicate(
+                    truth_history_term, truth_state_term, check=True)
+            self.truth_state = TermRecord(truth_state_term)
 
     def __eq__(self, other):
         return (self.game == other.game and
-                self.truth_state == other.truth_state)
+                (self.truth_state == other.truth_state or
+                 self.truth_state.get() == other.truth_state.get()))
 
     def turn_number(self):
         """The current turn number."""
         with Frame():
             num_moves = Term()
-            self._length_predicate(self.move_history, num_moves, check=True)
+            self._length_predicate(self.move_history.get(), num_moves,
+                                   check=True)
             return int(num_moves)
 
     def utility(self, role):
@@ -427,53 +427,59 @@ class GeneralGameState(object):
         Returns:
             GeneralGameState: The new game state.
         """
-        game_id_term = Term.from_atom_name(self.game_id())
+        with Frame() as f:
+            game_id_term = self._game_id_term()
 
-        moves_term = Term.from_list_terms([
-            self._does_functor(Term.from_atom(role._atom),
-                               action._term_record.get())
-            for (role, action) in moves.items()])
+            moves_term = Term.from_list_terms([
+                self._does_functor(Term.from_atom(role._atom),
+                                   action._term_record.get())
+                for (role, action) in moves.items()])
 
-        # prepare_moves(game_id, moves_term, PreparedMoves)
-        prepared_moves = Term()
-        try:
-            self._prepare_moves_predicate(
-                game_id_term, moves_term, prepared_moves, check=True)
-        except PrologCallFailed:
-            raise ValueError(
-                'Invalid move set. Possibly not 1 move per role.')
+            # prepare_moves(game_id, moves_term, PreparedMoves)
+            prepared_moves = f.term()
+            try:
+                self._prepare_moves_predicate(
+                    game_id_term, moves_term, prepared_moves, check=True)
+            except PrologCallFailed:
+                raise ValueError(
+                    'Invalid move set. Possibly not 1 move per role.')
 
-        # NewMoveHistory = [PreparedMoves | old_move_history]
-        new_move_history = Term.from_cons_list(prepared_moves,
-                                               self.move_history)
+            # NewMoveHistory = [PreparedMoves | old_move_history]
+            new_move_history = Term.from_cons_list(prepared_moves,
+                                                   self.move_history.get())
 
-        # truth_history(game_id, NewMoveHistory, old_truth_history,
-        #               NewTruthHistory)
-        new_truth_history = Term()
-        try:
-            self._truth_history_4_predicate(
-                game_id_term, new_move_history, self.truth_history,
-                new_truth_history, check=True)
-        except PrologCallFailed:
-            raise ValueError('Invalid moves.')
+            # truth_history(game_id, NewMoveHistory, old_truth_history,
+            #               NewTruthHistory)
+            new_truth_history = f.term()
+            try:
+                self._truth_history_4_predicate(
+                    game_id_term, new_move_history, self.truth_history.get(),
+                    new_truth_history, check=True)
+            except PrologCallFailed:
+                raise ValueError('Invalid moves: {}'.format(
+                    {str(role): str(action)
+                     for role, action in moves.items()}))
 
-        # final_truth_state(NewTruthHistory, NewTruthState)
-        new_truth_state = Term()
-        self._final_truth_state_predicate(new_truth_history, new_truth_state,
-                                          check=True)
+            # final_truth_state(NewTruthHistory, NewTruthState)
+            new_truth_state = f.term()
+            self._final_truth_state_predicate(
+                new_truth_history, new_truth_state, check=True)
 
-        return GeneralGameState(
-            game=self.game,
-            move_history=new_move_history,
-            truth_history=new_truth_history,
-            truth_state=new_truth_state,
-        )
+            return GeneralGameState(
+                game=self.game,
+                move_history_term=new_move_history,
+                truth_history_term=new_truth_history,
+                truth_state_term=new_truth_state,
+            )
 
     def game_id(self):
         return self.game.game_id
 
+    def _game_id_term(self):
+        return Term.from_atom_name(self.game_id())
+
     def _query_term(self, *queries):
-        return self.game._stateful_query_term(self.truth_state, *queries)
+        return self.game._stateful_query_term(self.truth_state.get(), *queries)
 
     def _query(self, *queries):
-        return self.game._stateful_query(self.truth_state, *queries)
+        return self.game._stateful_query(self.truth_state.get(), *queries)
