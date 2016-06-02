@@ -7,6 +7,7 @@ from swilite import (
     Functor,
     Module,
     Predicate,
+    PrologCallFailed,
     Query,
     Term,
     TermList,
@@ -315,25 +316,24 @@ class GeneralGameState(object):
     _terminal_atom = Atom('terminal')
 
     _base_functor = GeneralGame._base_functor
-    _does_functor = Functor(Atom('does'), 2)
-    _eq_functor = Functor(Atom('='), 2)
-    _final_truth_state_functor = Functor(Atom('final_truth_state'), 2)
-    _goal_functor = Functor(Atom('goal'), 2)
-    _legal_functor = Functor(Atom('legal'), 2)
-    _prepare_moves_functor = Functor(Atom('prepare_moves'), 3)
-    _true_functor = Functor(Atom('true'), 1)
-    _truth_history_3_functor = Functor(Atom('truth_history'), 3)
-    _truth_history_4_functor = Functor(Atom('truth_history'), 4)
+    _does_functor = Functor('does', 2)
+    _eq_functor = Functor('=', 2)
+    _goal_functor = Functor('goal', 2)
+    _legal_functor = Functor('legal', 2)
+    _true_functor = Functor('true', 1)
+    _truth_history_3_functor = Functor('truth_history', 3)
 
     _final_truth_state_predicate = Predicate(
-        functor=_final_truth_state_functor,
+        functor=Functor('final_truth_state', 2),
         module=GeneralGameManager._ggp_state)
-    _length_predicate = Predicate(functor=Functor(Atom('length'), 2))
+    _length_predicate = Predicate(functor=Functor('length', 2))
+    _prepare_moves_predicate = Predicate(functor=Functor('prepare_moves', 3),
+                                         module=GeneralGameManager._ggp_state)
     _truth_history_3_predicate = Predicate(
         functor=_truth_history_3_functor,
         module=GeneralGameManager._ggp_state)
     _truth_history_4_predicate = Predicate(
-        functor=_truth_history_4_functor,
+        functor=Functor('truth_history', 4),
         module=GeneralGameManager._ggp_state)
 
     def __init__(self, game,
@@ -436,29 +436,31 @@ class GeneralGameState(object):
 
         # prepare_moves(game_id, moves_term, PreparedMoves)
         prepared_moves = Term()
-        prepare_moves_query = self._prepare_moves_functor(
-            game_id_term, moves_term, prepared_moves)
+        try:
+            self._prepare_moves_predicate(
+                game_id_term, moves_term, prepared_moves, check=True)
+        except PrologCallFailed:
+            raise ValueError(
+                'Invalid move set. Possibly not 1 move per role.')
 
         # NewMoveHistory = [PreparedMoves | old_move_history]
-        new_move_history = Term()
-        move_history_query = self._eq_functor(
-            new_move_history,
-            Term.from_cons_list(prepared_moves, self.move_history))
+        new_move_history = Term.from_cons_list(prepared_moves,
+                                               self.move_history)
 
         # truth_history(game_id, NewMoveHistory, old_truth_history,
         #               NewTruthHistory)
         new_truth_history = Term()
-        truth_history_query = self._truth_history_4_functor(
-            game_id_term, new_move_history, self.truth_history,
-            new_truth_history)
+        try:
+            self._truth_history_4_predicate(
+                game_id_term, new_move_history, self.truth_history,
+                new_truth_history, check=True)
+        except PrologCallFailed:
+            raise ValueError('Invalid moves.')
 
         # final_truth_state(NewTruthHistory, NewTruthState)
         new_truth_state = Term()
-        truth_state_query = self._final_truth_state_functor(
-            new_truth_history, new_truth_state)
-
-        (prepare_moves_query & move_history_query & truth_history_query &
-         truth_state_query)(check=True)
+        self._final_truth_state_predicate(new_truth_history, new_truth_state,
+                                          check=True)
 
         return GeneralGameState(
             game=self.game,
